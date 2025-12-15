@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(py -c:*)",
+      "Bash(del IMPROVEMENTS.md QUICK_START_NEW_FEATURES.md NEW_FEATURES_SUMMARY.md MULTI_ORG_GUIDE.md)",
+      "Bash(py -m pip:*)",
+      "Bash(timeout 5 py:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
