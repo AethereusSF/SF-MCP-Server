@@ -8,7 +8,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-**Created by Sameer** | [Report Issues](https://github.com/UltralegendSam-Fs/Salesforce-MCP-Server/issues) | [Complete Guide](COMPLETE_GUIDE.md)
+**Created by Sameer** | [Report Issues](https://github.com/AethereusSF/SF-MCP-Server/issues) | [Complete Guide](COMPLETE_GUIDE.md)
 
 ---
 
@@ -72,8 +72,8 @@ Use execute_soql_query to run: SELECT Id, Name FROM Account LIMIT 10
 
 ```bash
 # Clone repository
-git clone https://github.com/UltralegendSam-Fs/Salesforce-MCP-Server
-cd Salesforce-MCP-Server
+git clone https://github.com/AethereusSF/SF-MCP-Server
+cd SF-MCP-Server
 
 # Create virtual environment
 python -m venv venv
@@ -90,8 +90,8 @@ python -m app.main --mcp-stdio
 
 ```bash
 # Clone repository
-git clone https://github.com/UltralegendSam-Fs/Salesforce-MCP-Server
-cd Salesforce-MCP-Server
+git clone https://github.com/AethereusSF/SF-MCP-Server
+cd SF-MCP-Server
 
 # Create virtual environment
 python3 -m venv venv
@@ -795,9 +795,9 @@ MIT License - See [LICENSE](LICENSE) for details
 
 ## 🆘 Support
 
-- **Issues:** [GitHub Issues](https://github.com/UltralegendSam-Fs/Salesforce-MCP-Server/issues)
+- **Issues:** [GitHub Issues](https://github.com/AethereusSF/SF-MCP-Server/issues)
 - **Documentation:** [Complete Guide](COMPLETE_GUIDE.md)
-- **Discussions:** [GitHub Discussions](https://github.com/UltralegendSam-Fs/Salesforce-MCP-Server/discussions)
+- **Discussions:** [GitHub Discussions](https://github.com/AethereusSF/SF-MCP-Server/discussions)
 
 ---
 
@@ -805,7 +805,4 @@ MIT License - See [LICENSE](LICENSE) for details
 
 If this project saved you time, please star the repository! ⭐
 
----
-
-**Made with ❤️ by Sameer** | Powered by [Anthropic Claude](https://claude.ai)
 
