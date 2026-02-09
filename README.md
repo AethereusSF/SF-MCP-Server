@@ -8,7 +8,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-**Created by Sameer** | [Report Issues](https://github.com/UltralegendSam-Fs/Salesforce-MCP-Server/issues) | [Complete Guide](COMPLETE_GUIDE.md)
+**Created by Sameer** | [Report Issues](https://github.com/AethereusSF/SF-MCP-Server/issues) | [Complete Guide](COMPLETE_GUIDE.md)
 
 ---
 
@@ -72,7 +72,7 @@ Use execute_soql_query to run: SELECT Id, Name FROM Account LIMIT 10
 
 ```bash
 # Clone repository
-git clone https://github.com/UltralegendSam-Fs/Salesforce-MCP-Server
+git clone https://github.com/AethereusSF/SF-MCP-Server
 cd Salesforce-MCP-Server
 
 # Run setup script (creates venv, installs dependencies, tests installation)
@@ -85,7 +85,7 @@ That's it! `setup.bat` handles everything automatically - creates the virtual en
 
 ```bash
 # Clone repository
-git clone https://github.com/UltralegendSam-Fs/Salesforce-MCP-Server
+git clone https://github.com/AethereusSF/SF-MCP-Server
 cd Salesforce-MCP-Server
 
 # Create virtual environment
@@ -103,7 +103,7 @@ python -m app.main --mcp-stdio
 
 ```bash
 # Clone repository
-git clone https://github.com/UltralegendSam-Fs/Salesforce-MCP-Server
+git clone https://github.com/AethereusSF/SF-MCP-Server
 cd Salesforce-MCP-Server
 
 # Make scripts executable
@@ -117,7 +117,7 @@ chmod +x setup.sh start_mcp.sh start_http.sh
 
 ```bash
 # Clone repository
-git clone https://github.com/UltralegendSam-Fs/Salesforce-MCP-Server
+git clone https://github.com/AethereusSF/SF-MCP-Server
 cd Salesforce-MCP-Server
 
 # Create virtual environment
@@ -823,9 +823,9 @@ MIT License - See [LICENSE](LICENSE) for details
 
 ## 🆘 Support
 
-- **Issues:** [GitHub Issues](https://github.com/UltralegendSam-Fs/Salesforce-MCP-Server/issues)
+- **Issues:** [GitHub Issues](https://github.com/AethereusSF/SF-MCP-Server/issues)
 - **Documentation:** [Complete Guide](COMPLETE_GUIDE.md)
-- **Discussions:** [GitHub Discussions](https://github.com/UltralegendSam-Fs/Salesforce-MCP-Server/discussions)
+- **Discussions:** [GitHub Discussions](https://github.com/AethereusSF/SF-MCP-Server/discussions)
 
 ---
 
