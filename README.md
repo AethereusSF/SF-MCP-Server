@@ -8,7 +8,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-**Created by Sameer** | [Report Issues](https://github.com/AethereusSF/SF-MCP-Server/issues) | [Complete Guide](COMPLETE_GUIDE.md)
+**Created by Sameer** | [Report Issues](https://github.com/UltralegendSam-Fs/Salesforce-MCP-Server/issues) | [Complete Guide](COMPLETE_GUIDE.md)
 
 ---
 
@@ -68,12 +68,25 @@ Use execute_soql_query to run: SELECT Id, Name FROM Account LIMIT 10
 
 ### Installation
 
-#### Windows
+#### Windows (Recommended - One Click Setup)
 
 ```bash
 # Clone repository
-git clone https://github.com/AethereusSF/SF-MCP-Server
-cd SF-MCP-Server
+git clone https://github.com/UltralegendSam-Fs/Salesforce-MCP-Server
+cd Salesforce-MCP-Server
+
+# Run setup script (creates venv, installs dependencies, tests installation)
+setup.bat
+```
+
+That's it! `setup.bat` handles everything automatically - creates the virtual environment, installs all dependencies, and verifies the installation.
+
+#### Windows (Manual)
+
+```bash
+# Clone repository
+git clone https://github.com/UltralegendSam-Fs/Salesforce-MCP-Server
+cd Salesforce-MCP-Server
 
 # Create virtual environment
 python -m venv venv
@@ -86,12 +99,26 @@ pip install -r requirements.txt
 python -m app.main --mcp-stdio
 ```
 
-#### macOS / Linux
+#### macOS / Linux (Recommended - One Click Setup)
 
 ```bash
 # Clone repository
-git clone https://github.com/AethereusSF/SF-MCP-Server
-cd SF-MCP-Server
+git clone https://github.com/UltralegendSam-Fs/Salesforce-MCP-Server
+cd Salesforce-MCP-Server
+
+# Make scripts executable
+chmod +x setup.sh start_mcp.sh start_http.sh
+
+# Run setup script (creates venv, installs dependencies, tests installation)
+./setup.sh
+```
+
+#### macOS / Linux (Manual)
+
+```bash
+# Clone repository
+git clone https://github.com/UltralegendSam-Fs/Salesforce-MCP-Server
+cd Salesforce-MCP-Server
 
 # Create virtual environment
 python3 -m venv venv
@@ -128,11 +155,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 {
   "mcpServers": {
     "salesforce-mcp-server": {
-      "command": "/bin/bash",
-      "args": [
-        "-lc",
-        "cd '/absolute/path/to/Salesforce-MCP-Server' && source venv/bin/activate && python -m app.main --mcp-stdio"
-      ]
+      "command": "/absolute/path/to/Salesforce-MCP-Server/start_mcp.sh"
     }
   }
 }
@@ -613,7 +636,12 @@ Salesforce-MCP-Server/
 ├── .env.example                          # Example configuration
 ├── README.md                             # Main documentation
 ├── test_all_mcp_tools.py                 # Comprehensive testing suite
-├── start_mcp.bat                         # Windows startup script
+├── setup.bat                             # Windows setup script (one-click install)
+├── setup.sh                              # macOS/Linux setup script (one-click install)
+├── start_mcp.bat                         # Windows startup script (stdio mode)
+├── start_mcp.sh                          # macOS/Linux startup script (stdio mode)
+├── start_http.bat                        # Windows HTTP/SSE server startup
+├── start_http.sh                         # macOS/Linux HTTP/SSE server startup
 └── Documents/                            # CSV exports and reports stored here
     ├── README.md                         # Documents folder info
     └── *.csv                             # Field usage reports, data exports
@@ -795,9 +823,9 @@ MIT License - See [LICENSE](LICENSE) for details
 
 ## 🆘 Support
 
-- **Issues:** [GitHub Issues](https://github.com/AethereusSF/SF-MCP-Server/issues)
+- **Issues:** [GitHub Issues](https://github.com/UltralegendSam-Fs/Salesforce-MCP-Server/issues)
 - **Documentation:** [Complete Guide](COMPLETE_GUIDE.md)
-- **Discussions:** [GitHub Discussions](https://github.com/AethereusSF/SF-MCP-Server/discussions)
+- **Discussions:** [GitHub Discussions](https://github.com/UltralegendSam-Fs/Salesforce-MCP-Server/discussions)
 
 ---
 
@@ -805,4 +833,7 @@ MIT License - See [LICENSE](LICENSE) for details
 
 If this project saved you time, please star the repository! ⭐
 
+---
+
+**Made with ❤️ by Sameer** | Powered by [Anthropic Claude](https://claude.ai)
 

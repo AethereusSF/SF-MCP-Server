@@ -7,10 +7,15 @@ echo This is for Claude Code access via ngrok
 echo.
 
 cd /d "%~dp0"
-call venv\Scripts\activate.bat
+
+REM Use venv Python directly - no activation needed, works on all Python versions
+if not exist venv\Scripts\python.exe (
+    echo ERROR: Virtual environment not found. Please run setup.bat first.
+    exit /b 1
+)
 
 echo Server will run on port 8000
 echo Press Ctrl+C to stop the server
 echo.
 
-py -m app.main --http
+venv\Scripts\python.exe -m app.main --http
