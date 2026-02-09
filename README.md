@@ -155,13 +155,17 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 {
   "mcpServers": {
     "salesforce-mcp-server": {
-      "command": "/absolute/path/to/Salesforce-MCP-Server/start_mcp.sh"
+      "command": "/bin/bash",
+      "args": [
+        "-c",
+        "cd '/absolute/path/to/Salesforce-MCP-Server' && venv/bin/python -m app.main --mcp-stdio"
+      ]
     }
   }
 }
 ```
 
-**Important:** Replace with your actual absolute path!
+**Important:** Replace `/absolute/path/to/Salesforce-MCP-Server` with your actual absolute path!
 
 ### First Use
 
