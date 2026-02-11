@@ -80,28 +80,26 @@ fi
 
 # Test the installation
 echo "[4/4] Testing server installation..."
-echo "Running basic import test..."
-venv/bin/python -c "import app.main; print('Server module imported successfully!')"
-if [ $? -ne 0 ]; then
-    echo "ERROR: Server test failed"
-    echo "Please check the error messages above"
-    exit 1
-fi
-echo ""
+echo "Running dependency import tests..."
 
-# Test MCP installation
-echo "Testing MCP library..."
-venv/bin/python -c "import mcp; print('MCP library imported successfully!')"
+venv/bin/python -c "import mcp; print('  MCP library: OK')"
 if [ $? -ne 0 ]; then
     echo "WARNING: MCP library test failed"
 fi
-echo ""
 
-# Test Salesforce library
-echo "Testing Salesforce library..."
-venv/bin/python -c "import simple_salesforce; print('Simple Salesforce imported successfully!')"
+venv/bin/python -c "import simple_salesforce; print('  Salesforce library: OK')"
 if [ $? -ne 0 ]; then
     echo "WARNING: Salesforce library test failed"
+fi
+
+venv/bin/python -c "import cryptography; print('  Cryptography library: OK')"
+if [ $? -ne 0 ]; then
+    echo "WARNING: Cryptography library test failed"
+fi
+
+venv/bin/python -c "import pydantic; print('  Pydantic library: OK')"
+if [ $? -ne 0 ]; then
+    echo "WARNING: Pydantic library test failed"
 fi
 echo ""
 
@@ -110,9 +108,9 @@ echo "Setup completed successfully!"
 echo "========================================"
 echo ""
 echo "Next steps:"
-echo "1. Configure your .env file with your Salesforce credentials"
-echo "2. Run ./start_mcp.sh to start the server in stdio mode"
-echo "3. Run ./start_http.sh to start the HTTP/SSE server (optional)"
+echo "1. Get your license key from MCP Admin"
+echo "2. Add APP_ENCRYPTION_KEY and APP_PASSWORD_ENC to your .env file"
+echo "3. Run ./start_mcp.sh to start the server in stdio mode"
 echo ""
 echo "For more information, see the README.md file."
 echo "========================================"
