@@ -3,7 +3,7 @@
 > **The complete Model Context Protocol (MCP) server for Salesforce development**
 > Deploy metadata, run SOQL, manage multiple orgs, and automate everything - all through Claude Desktop.
 
-[![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/release/python-31312/)
 [![MCP](https://img.shields.io/badge/MCP-1.12.4-green.svg)](https://github.com/modelcontextprotocol)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
@@ -42,7 +42,7 @@ Transform Claude Desktop into a **powerful Salesforce IDE** with 60 optimized to
 
 ### Prerequisites
 
-- **Python 3.13+** ([Download](https://www.python.org/downloads/))
+- **Python 3.13+** ([Download](https://www.python.org/downloads/release/python-31312/))
 - **Git** ([Download](https://git-scm.com/downloads))
 - **VS Code** ([Download](https://code.visualstudio.com/download))
 - **Claude Desktop** ([Download](https://claude.ai/download))
