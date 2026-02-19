@@ -8,7 +8,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-**Created by Sameer** | [Report Issues](https://github.com/AethereusSF/SF-MCP-Server/issues) | [Complete Guide](COMPLETE_GUIDE.md)
+**Created by Sameer** | [Report Issues](https://github.com/AethereusSF/SF-MCP-Server/issues)
 
 ---
 
