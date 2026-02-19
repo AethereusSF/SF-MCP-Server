@@ -3,7 +3,7 @@
 > **The complete Model Context Protocol (MCP) server for Salesforce development**
 > Deploy metadata, run SOQL, manage multiple orgs, and automate everything - all through Claude Desktop.
 
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
 [![MCP](https://img.shields.io/badge/MCP-1.12.4-green.svg)](https://github.com/modelcontextprotocol)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
@@ -20,6 +20,7 @@ Transform Claude Desktop into a **powerful Salesforce IDE** with 60 optimized to
 **NEW v2.1:** Added comprehensive debugging tool - diagnose and fix any Salesforce defect!
 **NEW v2.2:** Added `analyze_field_usage` - comprehensive field usage analysis across ALL metadata with CSV export!
 **NEW v2.3:** API-only authentication - reliable username/password login for Claude Desktop!
+**NEW v2.4:** Added `compare_page_layouts` - compare page layouts between orgs with full CSV diff report!
 
 ### Key Features
 
@@ -41,7 +42,9 @@ Transform Claude Desktop into a **powerful Salesforce IDE** with 60 optimized to
 
 ### Prerequisites
 
-- **Python 3.11+** ([Download](https://www.python.org/downloads/))
+- **Python 3.13+** ([Download](https://www.python.org/downloads/))
+- **Git** ([Download](https://git-scm.com/downloads))
+- **VS Code** ([Download](https://code.visualstudio.com/download))
 - **Claude Desktop** ([Download](https://claude.ai/download))
 - **Salesforce Org** (Production, Sandbox, or Developer)
 
@@ -95,24 +98,6 @@ cd Salesforce-MCP-Server
 
 That's it! `setup.bat` handles everything automatically - creates the virtual environment, installs all dependencies, and verifies the installation.
 
-#### Windows (Manual)
-
-```bash
-# Clone repository
-git clone https://github.com/AethereusSF/SF-MCP-Server
-cd Salesforce-MCP-Server
-
-# Create virtual environment
-python -m venv venv
-venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Test server (optional)
-python -m app.main --mcp-stdio
-```
-
 #### macOS / Linux (Recommended - One Click Setup)
 
 ```bash
@@ -125,24 +110,6 @@ chmod +x setup.sh start_mcp.sh start_http.sh
 
 # Run setup script (creates venv, installs dependencies, tests installation)
 ./setup.sh
-```
-
-#### macOS / Linux (Manual)
-
-```bash
-# Clone repository
-git clone https://github.com/AethereusSF/SF-MCP-Server
-cd Salesforce-MCP-Server
-
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Test server (optional)
-python -m app.main --mcp-stdio
 ```
 
 ### Configure Claude Desktop
@@ -190,7 +157,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ---
 
-## 🛠️ Tool Categories (57 Total - Optimized for LLMs!)
+## 🛠️ Tool Categories (58 Total - Optimized for LLMs!)
 
 ### ⭐ NEW: Consolidated Tools (Core Operations)
 **Universal tools that replace 59 specialized tools:**
@@ -318,12 +285,13 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 - `list_available_profiles` - List all profiles in the org
 - `list_available_permission_sets` - List all permission sets in the org
 
-### 🔄 Advanced Comparison Tools (5)
+### 🔄 Advanced Comparison Tools (6)
 - `compare_profiles` - Compare two profiles side-by-side
 - `compare_permission_sets` - Compare two permission sets
 - `compare_object_field_counts` - Compare field counts between orgs
 - `find_similar_fields_across_objects` - Find fields with similar names/types
 - `compare_org_object_counts` - Compare total object counts between orgs
+- **`compare_page_layouts`** - **NEW!** Compare page layouts between orgs — fields, sections, and related lists diff with CSV export
 
 ---
 
@@ -507,6 +475,35 @@ public class AccountService {
 "Compare Account object fields between my two connected orgs"
 "Find similar fields across Account and Contact objects"
 "Compare total object counts between production and sandbox"
+```
+
+### Page Layout Comparison (NEW in v2.4!)
+
+```
+# Compare one layout between two orgs
+"Compare Account page layout between production and sandbox"
+→ compare_page_layouts(
+    layout_names="Account-Account Layout",
+    source_org_user_id="0051a000001XyzABC",
+    target_org_user_id="0051b000001DefGHI"
+  )
+
+# Compare multiple layouts at once
+"Compare Account, Contact, and Case layouts between my two orgs"
+→ compare_page_layouts(
+    layout_names="Account-Account Layout,Contact-Contact Layout,Case-Case Layout",
+    source_org_user_id="0051a000001XyzABC",
+    target_org_user_id="0051b000001DefGHI"
+  )
+
+# Custom output filename
+"Compare Opportunity layout and save report as opp_layout_audit.csv"
+→ compare_page_layouts(
+    layout_names="Opportunity-Opportunity Layout",
+    source_org_user_id="0051a000001XyzABC",
+    target_org_user_id="0051b000001DefGHI",
+    output_filename="opp_layout_audit.csv"
+  )
 ```
 
 ---
@@ -865,5 +862,5 @@ If this project saved you time, please star the repository! ⭐
 
 ---
 
-**Made with ❤️ by Sameer** | Powered by [Anthropic Claude](https://claude.ai)
+**Built with ☕, code, and curiosity by Sameer** 
 
