@@ -42,7 +42,7 @@ Transform Claude Desktop into a **powerful Salesforce IDE** with 60 optimized to
 
 ### Prerequisites
 
-- **Python 3.13+** ([Download](https://www.python.org/downloads/release/python-31312/))
+- **Python 3.13** ([Download](https://www.python.org/downloads/release/python-31312/))
 - **Git** ([Download](https://git-scm.com/downloads))
 - **VS Code** ([Download](https://code.visualstudio.com/download))
 - **Claude Desktop** ([Download](https://claude.ai/download))
@@ -66,8 +66,6 @@ Use salesforce_login_username_password with:
 Step 3: Start using tools!
 Use execute_soql_query to run: SELECT Id, Name FROM Account LIMIT 10
 ```
-
-📖 **[Complete Authentication Guide](AUTHENTICATION_GUIDE.md)** - Detailed instructions with examples
 
 ### License Key Setup
 
@@ -186,7 +184,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 - Report field visibility issues
 - Broken lookup relationships
 
-**Handles 10+ issue types with intelligent diagnosis, root cause analysis, and actionable fix recommendations. See [Debugging Guide](DEBUGGING_GUIDE.md) for complete details.**
+**Handles 10+ issue types with intelligent diagnosis, root cause analysis, and actionable fix recommendations.**
 
 ### 🔐 Authentication & Sessions (6)
 - `salesforce_production_login` - OAuth to production org
@@ -787,58 +785,6 @@ Before submitting PRs:
 - ✅ Test in sandbox environment first
 - ✅ Document any API limit implications
 
----
-
-## 📖 Documentation
-
-- **[Complete Guide](COMPLETE_GUIDE.md)** - Comprehensive 2000+ line guide with all tools
-- **[Debugging Guide](DEBUGGING_GUIDE.md)** - NEW! Diagnose and fix any Salesforce defect
-- **[Updates Summary](UPDATES_SUMMARY.md)** - Latest v2.1 debugging capabilities
-- **[Capabilities Overview](CAPABILITIES.md)** - Feature summary
-- **[Test Report](MCP_TEST_REPORT.md)** - Latest test results
-- **[Contributing](CONTRIBUTING.md)** - Contribution guidelines
-
----
-
-## 🎯 Roadmap
-
-### Completed ✅
-- ✅ Multi-org management (COMPLETED)
-- ✅ Bulk operations (COMPLETED)
-- ✅ Schema analysis tools (COMPLETED)
-- ✅ Apex testing suite (COMPLETED)
-- ✅ User management tools (COMPLETED)
-- ✅ Profile and permission set analysis (COMPLETED)
-- ✅ Advanced comparison tools (COMPLETED)
-- ✅ Comprehensive debugging and defect-solving (COMPLETED v2.1)
-
-### Planned 🔄
-- 🔄 Enhanced Flow builder capabilities
-- 🔄 Data quality checking
-- 🔄 Automated backup scheduling
-- 🔄 CI/CD integration helpers
-- 🔄 Token persistence with encryption
-
-### Community Requests
-- 📊 Dashboard creation tools
-- 🔐 Enhanced security scanning
-- 📈 Performance profiling
-- 🌍 Multi-language support
-
----
-
-## 🏆 Success Stories
-
-> *"Deployed a complete feature with 5 Apex classes, 3 triggers, and 10 fields in under 10 minutes using just natural language commands."*
-> — Development Team Lead
-
-> *"Multi-org comparison saved us hours during pre-deployment validation."*
-> — DevOps Engineer
-
-> *"The health check and monitoring tools helped us catch API limit issues before they became critical."*
-> — Salesforce Admin
-
----
 
 ## ⚖️ License
 
@@ -851,7 +797,6 @@ MIT License - See [LICENSE](LICENSE) for details
 ## 🆘 Support
 
 - **Issues:** [GitHub Issues](https://github.com/AethereusSF/SF-MCP-Server/issues)
-- **Documentation:** [Complete Guide](COMPLETE_GUIDE.md)
 - **Discussions:** [GitHub Discussions](https://github.com/AethereusSF/SF-MCP-Server/discussions)
 
 ---
