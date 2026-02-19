@@ -188,8 +188,45 @@ def salesforce_custom_login(domain_url: str) -> str:
     except Exception as e:
         return _create_json_response(False, error=f"Invalid domain URL: {str(e)}")
 
-    clean_domain = domain_url.rstrip('/')
+    clean_domain = _normalize_salesforce_url(domain_url.rstrip('/'))
     return _do_login("custom", clean_domain)
+
+
+def _normalize_salesforce_url(url: str) -> str:
+    """
+    Convert any Salesforce UI URL to its API/OAuth equivalent on my.salesforce.com.
+
+    lightning.force.com and visual.force.com URLs cannot serve OAuth or REST API
+    endpoints — those only work on my.salesforce.com.
+
+    Examples:
+        https://breadfinancial--uxpoc.sandbox.lightning.force.com
+            -> https://breadfinancial--uxpoc.sandbox.my.salesforce.com
+        https://breadfinancial--uxpoc.sandbox.my.salesforce.com  (unchanged)
+            -> https://breadfinancial--uxpoc.sandbox.my.salesforce.com
+    """
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    hostname = parsed.hostname or ""
+
+    # lightning.force.com  →  {org}.my.salesforce.com
+    if hostname.endswith('.force.com'):
+        # Strip any UI-specific segment (lightning, visual, etc.) and force.com
+        # e.g. "breadfinancial--uxpoc.sandbox.lightning.force.com"
+        #   -> strip ".lightning.force.com"  -> "breadfinancial--uxpoc.sandbox"
+        #   -> append ".my.salesforce.com"
+        parts = hostname[: -len('.force.com')]  # breadfinancial--uxpoc.sandbox.lightning
+        # Drop the last segment if it is a known UI host (lightning, visual, etc.)
+        segments = parts.rsplit('.', 1)
+        ui_hosts = {'lightning', 'visual', 'content', 'documentforce'}
+        if len(segments) == 2 and segments[-1].lower() in ui_hosts:
+            org_part = segments[0]  # breadfinancial--uxpoc.sandbox
+        else:
+            org_part = parts  # fallback: keep as-is
+        return f"https://{org_part}.my.salesforce.com"
+
+    # Already a salesforce.com URL — return unchanged
+    return url
 
 
 def _do_login(org_type: str, auth_url: str) -> str:
@@ -414,14 +451,26 @@ def salesforce_get_domain_from_url(org_url: str) -> str:
         Returns: "curious-narwhal-rzlj6k-dev-ed.trailblaze.my"
     """
     try:
-        import re
         from urllib.parse import urlparse
 
         # Parse URL
         parsed = urlparse(org_url)
         hostname = parsed.hostname or parsed.path
 
-        # Remove .salesforce.com
+        # Normalize lightning.force.com / visual.force.com → my.salesforce.com
+        # e.g. breadfinancial--uxpoc.sandbox.lightning.force.com
+        #   -> breadfinancial--uxpoc.sandbox.my.salesforce.com
+        if hostname.endswith('.force.com'):
+            parts = hostname[: -len('.force.com')]  # strip .force.com
+            segments = parts.rsplit('.', 1)
+            ui_hosts = {'lightning', 'visual', 'content', 'documentforce'}
+            if len(segments) == 2 and segments[-1].lower() in ui_hosts:
+                org_part = segments[0]
+            else:
+                org_part = parts
+            hostname = f"{org_part}.my.salesforce.com"
+
+        # Extract domain for simple_salesforce (strip trailing .salesforce.com)
         if hostname.endswith('.salesforce.com'):
             domain = hostname.replace('.salesforce.com', '')
         else:
