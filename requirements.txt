@@ -6,6 +6,7 @@ python-dotenv==1.1.1
 requests==2.32.4           # used by your OAuth flow
 simple-salesforce==1.12.6
 psutil==7.0.0
+python-docx==1.1.2
 cryptography==44.0.0
 
 # If you use Google’s legacy SDK (ok to keep for now)
