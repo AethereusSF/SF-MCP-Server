@@ -94,11 +94,18 @@ def deploy_metadata(
         metadata_type: Type of metadata (see supported types above)
         name: API name (e.g., "AccountService", "Account.Customer_Code__c")
         content: JSON string with metadata definition (varies by type)
+                 NOTE: For ApexClass/ApexTrigger, you can also pass raw code directly
+                 and it will be auto-wrapped in the correct JSON format
         operation: "create" (fail if exists), "update" (fail if missing), "upsert" (default)
 
     Content format by type:
-    - ApexClass: {"body": "public class...", "apiVersion": "59.0"}
-    - ApexTrigger: {"body": "trigger...", "tableName": "Account", "apiVersion": "59.0"}
+    - ApexClass:
+        Format 1 (JSON): {"body": "public class...", "apiVersion": "59.0"}
+        Format 2 (raw code - auto-wrapped): "public class AccountService { ... }"
+    - ApexTrigger:
+        Format 1 (JSON auto-extract): {"body": "trigger AlertTrigger on Alert__c...", "apiVersion": "59.0"}
+        Format 2 (JSON explicit): {"body": "trigger...", "tableName": "Alert__c", "apiVersion": "59.0"}
+        Format 3 (raw code - auto-wrapped): "trigger AlertTrigger on Alert__c (after insert) { ... }"
     - CustomField (Text): {"label": "Customer Code", "type": "Text", "length": 50}
     - CustomField (Picklist):
         Format 1: {"label": "Status", "type": "Picklist", "picklistValues": ["New", "In Progress", "Done"]}
@@ -130,14 +137,31 @@ def deploy_metadata(
         # Normalize metadata type
         normalized_type = _normalize_metadata_type(metadata_type)
 
-        # Parse content
+        # Parse content - handle both JSON string and raw code
         try:
             content_dict = json.loads(content)
         except json.JSONDecodeError as e:
-            return format_error_response(
-                Exception(f"Invalid JSON in content parameter: {str(e)}"),
-                context="deploy_metadata"
-            )
+            # If JSON parsing fails, check if it's raw Apex/trigger code
+            # This happens when LLM passes raw code instead of JSON format
+            if normalized_type in ["ApexTrigger", "trigger"] and "trigger" in content.lower():
+                # Auto-wrap raw trigger code in expected JSON format
+                logger.info("Auto-wrapping raw trigger code in JSON format")
+                content_dict = {
+                    "body": content,
+                    "apiVersion": "59.0"
+                }
+            elif normalized_type in ["ApexClass", "apex", "class"] and "class" in content.lower():
+                # Auto-wrap raw Apex class code in expected JSON format
+                logger.info("Auto-wrapping raw Apex class code in JSON format")
+                content_dict = {
+                    "body": content,
+                    "apiVersion": "59.0"
+                }
+            else:
+                return format_error_response(
+                    Exception(f"Invalid JSON in content parameter: {str(e)}\n\nExpected format: {{\"body\": \"...\", \"apiVersion\": \"59.0\"}}\n\nReceived: {content[:100]}..."),
+                    context="deploy_metadata"
+                )
 
         # Route to appropriate handler based on metadata type
         if normalized_type in ["ApexClass", "apex", "class"]:
@@ -155,18 +179,37 @@ def deploy_metadata(
                 )
 
         elif normalized_type in ["ApexTrigger", "trigger"]:
+            # Try to get table_name from JSON, or extract from trigger body
+            table_name = content_dict.get("tableName", content_dict.get("objectName", ""))
+
+            # If table_name is not provided, try to extract from trigger body
+            if not table_name:
+                trigger_body = content_dict.get("body", "")
+                # Extract object name from trigger definition (e.g., "trigger Name on Object__c")
+                import re
+                match = re.search(r'trigger\s+\w+\s+on\s+(\w+)', trigger_body, re.IGNORECASE)
+                if match:
+                    table_name = match.group(1)
+                    logger.info(f"Auto-extracted object name from trigger body: {table_name}")
+                else:
+                    return json.dumps({
+                        "success": False,
+                        "error": "Could not determine target object. Please provide 'tableName' or 'objectName' in content, or ensure trigger body contains 'trigger Name on ObjectName' syntax.",
+                        "hint": "Add to your JSON: {\"body\": \"...\", \"tableName\": \"Alert__c\", \"apiVersion\": \"59.0\"}"
+                    }, indent=2)
+
             if operation == "create":
                 return dynamic_tools.create_apex_trigger(
                     trigger_name=name,
                     body=content_dict.get("body", ""),
-                    table_name=content_dict.get("tableName", content_dict.get("objectName", "")),
+                    table_name=table_name,
                     api_version=content_dict.get("apiVersion", "59.0")
                 )
             else:
                 return dynamic_tools.upsert_apex_trigger(
                     trigger_name=name,
                     body=content_dict.get("body", ""),
-                    table_name=content_dict.get("tableName", content_dict.get("objectName", "")),
+                    table_name=table_name,
                     api_version=content_dict.get("apiVersion", "59.0")
                 )
 

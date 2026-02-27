@@ -1227,33 +1227,46 @@ Examples:
     try:
         sf = get_salesforce_connection()
 
-        # Use Metadata field to get formula - ErrorConditionFormula not directly queryable
-        tooling_q = (
-            "SELECT Id, ValidationName, Active, Metadata "
-            f"FROM ValidationRule WHERE EntityDefinition.QualifiedApiName = '{object_name}' AND ValidationName = '{rule_name}'"
-        )
-        tooling_res = sf.toolingexecute(f"query/?q={tooling_q}")
-        if tooling_res.get("size") == 0:
+        # Step 1: Query to get ValidationRule Id and Name
+        vr_query = f"""
+                SELECT ValidationName, Id
+                FROM ValidationRule
+                WHERE EntityDefinition.QualifiedApiName = '{object_name}' AND ValidationName = '{rule_name}'
+            """
+        vr_result = sf.restful("tooling/query", params={'q': vr_query})
+
+        if not vr_result.get("records"):
             return json.dumps({"success": False, "error": f"ValidationRule '{rule_name}' not found on object '{object_name}'"}, indent=2)
 
-        rule_record = tooling_res["records"][0]
-        metadata = rule_record.get("Metadata", {})
+        # Get the first matching record
+        rec = vr_result["records"][0]
+        vr_id = rec.get("Id")
+        vr_name = rec.get("ValidationName")
 
-        # Build the response from metadata
-        rule = {
-            "Id": rule_record.get("Id"),
-            "Name": rule_record.get("ValidationName"),
-            "Active": metadata.get("active", rule_record.get("Active")),
-            "ErrorConditionFormula": metadata.get("errorConditionFormula", ""),
-            "ErrorDisplayField": metadata.get("errorDisplayField", ""),
-            "ErrorMessage": metadata.get("errorMessage", ""),
-            "Description": metadata.get("description", "")
-        }
+        # Step 2: Fetch full record with Metadata using the Id
+        try:
+            detail = sf.restful(f"tooling/sobjects/ValidationRule/{vr_id}")
+            metadata = detail.get("Metadata") or {}
 
-        # Note: CreatedBy/LastModifiedBy names not easily accessible for ValidationRule via API
-        # Would require additional queries with correct field names if needed
+            # Build the response from metadata
+            rule = {
+                "Id": vr_id,
+                "Name": vr_name,
+                "Active": metadata.get("active", detail.get("Active", False)),
+                "ErrorConditionFormula": metadata.get("errorConditionFormula", ""),
+                "ErrorDisplayField": metadata.get("errorDisplayField", ""),
+                "ErrorMessage": metadata.get("errorMessage", ""),
+                "Description": metadata.get("description", "")
+            }
 
-        return json.dumps({"success": True, "data": rule}, indent=2)
+            # Note: CreatedBy/LastModifiedBy names not easily accessible for ValidationRule via API
+            # Would require additional queries with correct field names if needed
+
+            return json.dumps({"success": True, "data": rule}, indent=2)
+
+        except Exception as detail_error:
+            logger.error(f"fetch_validation_rule - Failed to fetch full record for {vr_id}: %s", detail_error, exc_info=True)
+            return json.dumps({"success": False, "error": f"Failed to fetch full validation rule details: {str(detail_error)}"}, indent=2)
 
     except Exception as e:
         logger.error("fetch_validation_rule: %s", e, exc_info=True)

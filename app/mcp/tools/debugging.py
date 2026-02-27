@@ -6,7 +6,7 @@ Enhanced with:
 - Auto-fix capabilities for common issues
 - Cross-reference dependency analysis
 - Performance improvements and caching
-- 25 QA scenario patterns for intelligent issue detection
+- 26 QA scenario patterns for intelligent issue detection
 
 Created by Sameer
 """
@@ -22,7 +22,7 @@ from app.mcp.tools.utils import format_error_response, format_success_response
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# QA SCENARIO PATTERNS - Based on 25 real-world Salesforce issues
+# QA SCENARIO PATTERNS - Based on 26 real-world Salesforce issues
 # =============================================================================
 
 QA_SCENARIO_PATTERNS = {
@@ -293,6 +293,23 @@ QA_SCENARIO_PATTERNS = {
         "issue_type": "lookup",
         "scenario_id": 17,
         "description": "Lookup field shows records from wrong object"
+    },
+
+    # Task/Email Notification Issues (26)
+    "task_association_email_notification": {
+        "patterns": [
+            r"task.*associated.*wrong.*object",
+            r"task.*should.*associat.*account",
+            r"task.*whatid.*wrong",
+            r"send.*email.*notification.*task",
+            r"email.*after.*task.*creat",
+            r"notify.*contact.*task.*creat",
+            r"task.*link.*email",
+            r"email.*alert.*link"
+        ],
+        "issue_type": "trigger",
+        "scenario_id": 26,
+        "description": "Task association and email notification from trigger"
     }
 }
 
@@ -952,6 +969,7 @@ def diagnose_and_fix_issue(
         object_name: Object API name (e.g., "Account", "Opportunity")
         field_name: Field API name if issue is field-related (e.g., "Amount", "Stage")
         component_name: Name of the component (trigger, flow, validation rule, etc.)
+                        NOTE: For triggers, this will be AUTO-DETECTED if not provided or if incorrect
         auto_fix: Whether to attempt automatic fix (default: False, only provides diagnosis)
 
     Returns:
@@ -1004,9 +1022,70 @@ def diagnose_and_fix_issue(
             if issue_type == "auto" or issue_type == "detect":
                 issue_type = detected_scenario["issue_type"]
 
+        # AUTO-DETECT ACTUAL TRIGGER NAME if object is provided and component_name is not valid
+        # This prevents LLM from inventing trigger names like "TaskAssociationTrigger"
+        if issue_type in ["trigger", "apex_trigger", "apextrigger"] and object_name:
+            # Normalize object name (add __c if needed)
+            normalized_object = object_name if object_name.endswith("__c") or object_name in ["Account", "Contact", "Lead", "Opportunity", "Case", "Task", "Event"] else f"{object_name}__c"
+
+            # Query for actual triggers on this object
+            try:
+                trigger_query = f"SELECT Id, Name, TableEnumOrId FROM ApexTrigger WHERE TableEnumOrId = '{normalized_object}'"
+                trigger_result = sf.toolingexecute(trigger_query)
+
+                if trigger_result.get("totalSize", 0) > 0:
+                    actual_triggers = [t["Name"] for t in trigger_result["records"]]
+                    logger.info(f"Found {len(actual_triggers)} trigger(s) on {normalized_object}: {actual_triggers}")
+
+                    # If component_name was provided but doesn't match any actual trigger, use first actual trigger
+                    if component_name and component_name not in actual_triggers:
+                        logger.warning(f"Provided component_name '{component_name}' does not exist. Using actual trigger: {actual_triggers[0]}")
+                        component_name = actual_triggers[0]
+                    elif not component_name:
+                        # No component_name provided, use first trigger found
+                        component_name = actual_triggers[0]
+                        logger.info(f"Auto-detected trigger: {component_name}")
+
+                    # If multiple triggers exist, add to diagnosis
+                    if len(actual_triggers) > 1:
+                        logger.info(f"Multiple triggers found on {normalized_object}. Using '{component_name}'. Others: {[t for t in actual_triggers if t != component_name]}")
+                else:
+                    logger.info(f"No existing triggers found on {normalized_object}")
+                    # If component_name was provided but no triggers exist, it was likely invented
+                    if component_name:
+                        logger.warning(f"No triggers exist on {normalized_object}, but component_name '{component_name}' was provided. This may be an invented name.")
+                        # Keep it for now so diagnosis can suggest creating the trigger
+            except Exception as e:
+                logger.warning(f"Could not query for triggers on {normalized_object}: {e}")
+
         # Route to appropriate diagnostic function
         if issue_type in ["trigger", "apex_trigger", "apextrigger"]:
             result = _diagnose_trigger_issue(sf, description, object_name, component_name, auto_fix, detected_scenario)
+
+            # Add trigger detection info to result
+            if object_name:
+                try:
+                    trigger_query = f"SELECT Name FROM ApexTrigger WHERE TableEnumOrId = '{normalized_object}'"
+                    trigger_result = sf.toolingexecute(trigger_query)
+                    actual_triggers = [t["Name"] for t in trigger_result.get("records", [])]
+
+                    if actual_triggers:
+                        result["trigger_detection"] = {
+                            "object": normalized_object,
+                            "detected_trigger": component_name,
+                            "all_triggers_on_object": actual_triggers,
+                            "note": "✓ Actual trigger name auto-detected from org (not invented)"
+                        }
+                    else:
+                        result["trigger_detection"] = {
+                            "object": normalized_object,
+                            "detected_trigger": None,
+                            "all_triggers_on_object": [],
+                            "note": "⚠️ No triggers currently exist on this object. Analysis is based on the described issue.",
+                            "suggestion": f"Consider creating a trigger named 'AlertTrigger' or similar on {normalized_object}"
+                        }
+                except:
+                    pass
         elif issue_type in ["flow", "process_builder", "workflow"]:
             result = _diagnose_flow_issue(sf, description, object_name, component_name, auto_fix, detected_scenario)
         elif issue_type in ["validation", "validation_rule", "validationrule"]:
@@ -1048,7 +1127,7 @@ def diagnose_and_fix_issue(
 
 
 # =============================================================================
-# TRIGGER DIAGNOSTICS (QA Issues 1, 2, 3)
+# TRIGGER DIAGNOSTICS (QA Issues 1, 2, 3, 26)
 # =============================================================================
 
 def _diagnose_trigger_issue(sf, description: str, object_name: Optional[str], trigger_name: Optional[str], _auto_fix: bool, _detected_scenario: Optional[Dict] = None) -> Dict[str, Any]:
@@ -1059,6 +1138,7 @@ def _diagnose_trigger_issue(sf, description: str, object_name: Optional[str], tr
     - #1: Trigger not updating specific field (e.g., Industry field not getting updated)
     - #2: Maximum trigger depth exceeded (recursion)
     - #3: Too many SOQL queries: 101 (governor limits in bulk)
+    - #26: Task association and email notification from trigger (NEW)
     """
     diagnosis = {
         "issue_type": "trigger",
@@ -1303,6 +1383,253 @@ for (Opportunity opp : Trigger.new) {
             {
                 "priority": 2,
                 "action": "Use Trigger.newMap and Trigger.oldMap for efficient lookups"
+            }
+        ])
+
+    # ==========================================================================
+    # QA SCENARIO #26: Task Association and Email Notification from Trigger
+    # ==========================================================================
+    elif scenario_id == 26 or any(keyword in description.lower() for keyword in ["task", "email", "notification", "whatid"]):
+        diagnosis["root_causes"].append({
+            "cause": "Task Association and Email Notification Pattern",
+            "explanation": "Common pattern where Tasks need to be:\n1. Associated with correct object (Account vs Alert via WhatId)\n2. Assigned to correct Contact (via WhoId)\n3. Followed by email notification with task/alert links\n4. Handle governor limits (email batching, SOQL bulkification)",
+            "severity": "medium",
+            "qa_scenario": 26
+        })
+
+        diagnosis["recommendations"].extend([
+            {
+                "priority": 1,
+                "action": "Set Task.WhatId correctly for object association",
+                "code_example": """// Task WhatId determines which object the Task relates to
+// WhoId determines who is assigned (Contact or Lead)
+
+Task t = new Task();
+t.Subject  = 'Follow up on Alert: ' + alertRec.Name;
+t.WhatId   = alertRec.Account__c;  // ✅ Associate with Account (not Alert)
+t.WhoId    = latestContact.Id;     // ✅ Assign to Contact
+t.Status   = 'Not Started';
+t.Priority = 'Normal';
+t.ActivityDate = Date.today().addDays(7);  // Due date"""
+            },
+            {
+                "priority": 2,
+                "action": "Query optimization - fetch only latest Contact with LIMIT 1",
+                "code_example": """// ✅ EFFICIENT - Subquery with LIMIT 1 per Account
+Map<Id, Account> accMap = new Map<Id, Account>(
+    [
+        SELECT Id,
+            (SELECT Id, Email, FirstName, CreatedDate
+             FROM Contacts
+             ORDER BY CreatedDate DESC
+             LIMIT 1)
+        FROM Account
+        WHERE Id IN :accountIds
+    ]
+);
+
+// Access the single contact
+if (acc.Contacts != null && !acc.Contacts.isEmpty()) {
+    Contact latestContact = acc.Contacts[0];
+    // ... use contact
+}"""
+            },
+            {
+                "priority": 3,
+                "action": "Map Task IDs after DML for email links",
+                "code_example": """// After insert, map signatures to Task IDs
+List<String> taskSignaturesInOrder = new List<String>();
+
+// Build signatures BEFORE insert
+for (Alert__c alertRec : Trigger.New) {
+    Task t = new Task();
+    // ... configure task
+    tasksToInsert.add(t);
+
+    String sig = String.valueOf(t.WhatId) + '|' +
+                 String.valueOf(t.WhoId) + '|' + t.Subject;
+    taskSignaturesInOrder.add(sig);
+}
+
+insert tasksToInsert;
+
+// Map signature -> taskId using index
+Map<String, Id> taskSignatureToId = new Map<String, Id>();
+for (Integer i = 0; i < tasksToInsert.size(); i++) {
+    Task insertedTask = tasksToInsert[i];
+    String sig = taskSignaturesInOrder[i];
+    taskSignatureToId.put(sig, insertedTask.Id);
+}"""
+            },
+            {
+                "priority": 4,
+                "action": "Email batching to avoid governor limits",
+                "code_example": """// ⚠️ Governor Limits: Max 10 sendEmail() calls per transaction
+// Each call can send up to 100 emails
+
+List<Messaging.SingleEmailMessage> messages = new List<Messaging.SingleEmailMessage>();
+String baseUrl = System.URL.getOrgDomainUrl().toExternalForm();
+
+for (Alert__c alertRec : Trigger.New) {
+    Contact c = contactForAlert.get(alertRec.Id);
+    if (c == null || String.isBlank(c.Email)) continue;
+
+    String alertLink = baseUrl + '/' + alertRec.Id;
+    String taskLink  = baseUrl + '/' + taskId;
+
+    String mailBody = 'Alert created: ' + alertRec.Name + '\\n' +
+                      'Alert Link: ' + alertLink + '\\n' +
+                      'Task Link: ' + taskLink + '\\n' +
+                      'Due Date: ' + String.valueOf(dueDate);
+
+    Messaging.SingleEmailMessage mail = new Messaging.SingleEmailMessage();
+    mail.setToAddresses(new String[] { c.Email });
+    mail.setSubject('Alert created for your account');
+    mail.setPlainTextBody(mailBody);
+    mail.setSaveAsActivity(true);  // Save to Activity History
+    messages.add(mail);
+
+    // Send in batches of 10
+    if (messages.size() == 10) {
+        try {
+            Messaging.sendEmail(messages);
+        } catch (Exception ex) {
+            System.debug('Email error: ' + ex.getMessage());
+        }
+        messages.clear();
+    }
+}
+
+// Send remaining
+if (!messages.isEmpty()) {
+    try {
+        Messaging.sendEmail(messages);
+    } catch (Exception ex) {
+        System.debug('Email error: ' + ex.getMessage());
+    }
+}"""
+            },
+            {
+                "priority": 5,
+                "action": "Full working example - Task + Email pattern",
+                "code_example": """trigger AlertTrigger on Alert__c (after insert) {
+    // Collect Account Ids
+    Set<Id> accountIds = new Set<Id>();
+    for (Alert__c a : Trigger.New) {
+        if (a.Account__c != null) accountIds.add(a.Account__c);
+    }
+    if (accountIds.isEmpty()) return;
+
+    // Query Accounts with latest Contact (LIMIT 1)
+    Map<Id, Account> accMap = new Map<Id, Account>(
+        [
+            SELECT Id, (SELECT Id, Email, FirstName, CreatedDate
+                        FROM Contacts ORDER BY CreatedDate DESC LIMIT 1)
+            FROM Account WHERE Id IN :accountIds
+        ]
+    );
+
+    List<Task> tasksToInsert = new List<Task>();
+    List<String> taskSignaturesInOrder = new List<String>();
+    Map<Id, Contact> contactForAlert = new Map<Id, Contact>();
+
+    Date dueDate = Date.today().addDays(7);
+
+    // Build Tasks
+    for (Alert__c alertRec : Trigger.New) {
+        if (alertRec.Account__c == null) continue;
+
+        Account acc = accMap.get(alertRec.Account__c);
+        if (acc == null || acc.Contacts.isEmpty()) continue;
+
+        Contact latestContact = acc.Contacts[0];
+
+        Task t = new Task();
+        t.Subject      = 'Follow up: ' + alertRec.Name;
+        t.WhatId       = alertRec.Account__c;  // Account association
+        t.WhoId        = latestContact.Id;
+        t.Status       = 'Not Started';
+        t.Priority     = 'Normal';
+        t.ActivityDate = dueDate;
+        t.Description  = 'Alert: ' + alertRec.Name + '\\nPlease complete before due date.';
+
+        tasksToInsert.add(t);
+
+        String sig = String.valueOf(t.WhatId) + '|' +
+                     String.valueOf(t.WhoId) + '|' + t.Subject;
+        taskSignaturesInOrder.add(sig);
+        contactForAlert.put(alertRec.Id, latestContact);
+    }
+
+    // Insert Tasks
+    if (tasksToInsert.isEmpty()) return;
+    insert tasksToInsert;
+
+    // Map Task IDs
+    Map<String, Id> taskSignatureToId = new Map<String, Id>();
+    for (Integer i = 0; i < tasksToInsert.size(); i++) {
+        taskSignatureToId.put(taskSignaturesInOrder[i], tasksToInsert[i].Id);
+    }
+
+    // Send Emails (batched)
+    List<Messaging.SingleEmailMessage> messages = new List<Messaging.SingleEmailMessage>();
+    String baseUrl = System.URL.getOrgDomainUrl().toExternalForm();
+
+    for (Alert__c alertRec : Trigger.New) {
+        Contact c = contactForAlert.get(alertRec.Id);
+        if (c == null || String.isBlank(c.Email)) continue;
+
+        String expectedSubject = 'Follow up: ' + alertRec.Name;
+        String sig = String.valueOf(alertRec.Account__c) + '|' +
+                     String.valueOf(c.Id) + '|' + expectedSubject;
+        Id taskId = taskSignatureToId.get(sig);
+
+        String mailBody = 'Hello ' + (c.FirstName != null ? c.FirstName : '') + ',\\n\\n' +
+                          'Alert created: ' + alertRec.Name + '\\n' +
+                          'Alert Link: ' + baseUrl + '/' + alertRec.Id + '\\n' +
+                          'Task Link: ' + baseUrl + '/' + taskId + '\\n' +
+                          'Due Date: ' + String.valueOf(dueDate);
+
+        Messaging.SingleEmailMessage mail = new Messaging.SingleEmailMessage();
+        mail.setToAddresses(new String[] { c.Email });
+        mail.setSubject('Alert: ' + alertRec.Name);
+        mail.setPlainTextBody(mailBody);
+        mail.setSaveAsActivity(true);
+        messages.add(mail);
+
+        if (messages.size() == 10) {
+            try { Messaging.sendEmail(messages); }
+            catch (Exception ex) {
+                System.debug('Email error: ' + ex.getMessage());
+            }
+            messages.clear();
+        }
+    }
+
+    if (!messages.isEmpty()) {
+        try { Messaging.sendEmail(messages); }
+        catch (Exception ex) {
+            System.debug('Email error: ' + ex.getMessage());
+        }
+    }
+}"""
+            },
+            {
+                "priority": 6,
+                "action": "Key Best Practices",
+                "details": [
+                    "✓ WhatId = Account ID (related object, not the Alert)",
+                    "✓ WhoId = Contact/Lead ID (assignee)",
+                    "✓ LIMIT 1 in subquery to get only latest Contact",
+                    "✓ Build signature map before DML for ID mapping",
+                    "✓ Batch emails in groups of 10 (max 10 sendEmail calls)",
+                    "✓ Each sendEmail can handle up to 100 emails",
+                    "✓ Use setSaveAsActivity(true) to log emails",
+                    "✓ Include try-catch for email failures (don't fail trigger)",
+                    "✓ Use System.URL.getOrgDomainUrl() for proper links",
+                    "⚠️ Bulk insert alert >100 records may hit email limits",
+                    "💡 Consider Platform Events for async email (better performance)"
+                ]
             }
         ])
 

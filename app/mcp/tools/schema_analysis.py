@@ -433,8 +433,8 @@ def analyze_field_usage(
     """Comprehensive field usage analysis - find where fields are used across all metadata.
 
     This tool analyzes field usage across Apex Classes, Triggers, Flows, Validation Rules,
-    Formula Fields, Workflow Rules, Page Layouts, Email Templates, and optionally Reports.
-    Perfect for field audit, cleanup, and impact analysis.
+    Formula Fields, Workflow Rules, Page Layouts, FlexiPages (Lightning Pages), Email Templates,
+    and optionally Reports. Perfect for field audit, cleanup, and impact analysis.
 
     Added by Sameer
 
@@ -479,6 +479,7 @@ def analyze_field_usage(
         - Used in Formula Fields (count + names)
         - Used in Workflow Rules (count + names)
         - Used in Page Layouts (count + names)
+        - Used in FlexiPages/Lightning Pages (count + names)
         - Used in Email Templates (count + names)
         - Used in Reports (count + names)
         - Total Usage Count
@@ -520,8 +521,10 @@ def analyze_field_usage(
             "validation_rules": {},
             "workflow_rules": {},
             "layouts": {},
+            "flexipages": {},
             "reports": {},
-            "email_templates": {}
+            "email_templates": {},
+            "custom_fields_metadata": {}
         }
 
         # 1. Fetch ALL Apex Classes (ONCE)
@@ -695,7 +698,65 @@ def analyze_field_usage(
         except Exception as e:
             logger.warning(f"Error fetching Page Layouts: {e}")
 
-        # 7. Fetch ALL Reports (LIMITED) (ONCE) - OPTIONAL (only if requested)
+        # 7. Fetch ALL FlexiPages for this object (ONCE)
+        try:
+            logger.info(f"Fetching all FlexiPages for {object_name}...")
+            # First query: Get Id and EntityDefinition.QualifiedApiName
+            flexipage_query = f"""
+                SELECT Id, MasterLabel, EntityDefinition.QualifiedApiName
+                FROM FlexiPage
+                WHERE EntityDefinition.QualifiedApiName = '{object_name}'
+            """
+            flexipage_result = sf.restful("tooling/query", params={'q': flexipage_query})
+
+            flexipages_for_object = flexipage_result.get("records", [])
+            logger.info(f"Found {len(flexipages_for_object)} FlexiPages for {object_name}")
+
+            # Second step: Fetch full record with Metadata for each FlexiPage
+            for flexipage in flexipages_for_object:
+                flexipage_id = flexipage.get("Id")
+                flexipage_name = flexipage.get("MasterLabel", "Unknown")
+
+                try:
+                    # Get full record with Metadata
+                    flexipage_detail = sf.restful(f"tooling/sobjects/FlexiPage/{flexipage_id}")
+                    metadata = flexipage_detail.get("Metadata", {})
+
+                    # Extract field names from FlexiPage components
+                    field_names = []
+
+                    # FlexiPages have different structure - check flexiPageRegions
+                    flexipage_regions = metadata.get("flexiPageRegions", [])
+                    for region in flexipage_regions:
+                        item_instances = region.get("itemInstances", [])
+                        for item_instance in item_instances:
+                            # Check componentInstance for field references
+                            component_instance = item_instance.get("componentInstance", {})
+                            component_attributes = component_instance.get("componentInstanceProperties", [])
+
+                            for attr in component_attributes:
+                                attr_name = attr.get("name", "")
+                                attr_value = attr.get("value", "")
+
+                                # Common property names that contain field references
+                                if attr_name in ["fieldName", "field", "relatedListComponentName"]:
+                                    if attr_value:
+                                        field_names.append(attr_value.strip())
+                                # Also check if the value looks like a field API name
+                                elif attr_value and ("__c" in attr_value or attr_value in [f["name"] for f in describe["fields"]]):
+                                    field_names.append(attr_value.strip())
+
+                    metadata_cache["flexipages"][flexipage_name] = field_names
+                    logger.debug(f"Cached FlexiPage '{flexipage_name}' with {len(field_names)} fields")
+                except Exception as flexipage_err:
+                    logger.debug(f"Error fetching metadata for FlexiPage {flexipage_name}: {flexipage_err}")
+                    metadata_cache["flexipages"][flexipage_name] = []
+
+            logger.info(f"  ✓ Cached {len(metadata_cache['flexipages'])} FlexiPages for {object_name}")
+        except Exception as e:
+            logger.warning(f"Error fetching FlexiPages: {e}")
+
+        # 8. Fetch ALL Reports (LIMITED) (ONCE) - OPTIONAL (only if requested)
         if include_reports:
             try:
                 logger.info("Fetching reports (limited to 50 for performance)...")
@@ -768,6 +829,36 @@ def analyze_field_usage(
         except Exception as e:
             logger.warning(f"Error fetching Email Templates: {e}")
 
+        # 9. Fetch CustomField metadata for required field analysis (ONCE)
+        try:
+            logger.info(f"Fetching CustomField metadata for {object_name}...")
+            # Query CustomField metadata to get required field information
+            custom_field_query = f"""
+                SELECT DeveloperName, Metadata
+                FROM CustomField
+                WHERE EntityDefinition.QualifiedApiName = '{object_name}'
+            """
+            custom_field_result = sf.restful("tooling/query", params={'q': custom_field_query})
+
+            for field_record in custom_field_result.get("records", []):
+                developer_name = field_record.get("DeveloperName", "")
+                metadata = field_record.get("Metadata", {})
+
+                # The API name is DeveloperName + "__c"
+                field_api_name = f"{developer_name}__c" if developer_name else ""
+
+                if field_api_name and metadata:
+                    is_required = metadata.get("required", False)
+                    metadata_cache["custom_fields_metadata"][field_api_name] = {
+                        "required": is_required,
+                        "developer_name": developer_name
+                    }
+                    logger.debug(f"Cached field metadata: {field_api_name} (Required: {is_required})")
+
+            logger.info(f"  ✓ Cached {len(metadata_cache['custom_fields_metadata'])} custom field metadata records")
+        except Exception as e:
+            logger.warning(f"Error fetching CustomField metadata: {e}")
+
         logger.info(f"✓ All metadata cached! Now analyzing {len(fields_to_analyze)} fields against cached data...")
 
         # Results storage
@@ -779,12 +870,17 @@ def analyze_field_usage(
             if idx % 50 == 0:  # Progress every 50 fields
                 logger.info(f"Progress: [{idx}/{len(fields_to_analyze)}] fields analyzed")
 
+            # Check if field is required from metadata
+            is_required = False
+            if field_api_name in metadata_cache["custom_fields_metadata"]:
+                is_required = metadata_cache["custom_fields_metadata"][field_api_name].get("required", False)
+
             usage_data = {
                 "field_name": field_api_name,
                 "field_label": field["label"],
                 "field_type": field["type"],
                 "is_custom": field.get("custom", False),
-                "is_required": not field.get("nillable", True),
+                "is_required": is_required,
                 "apex_classes": [],
                 "apex_triggers": [],
                 "flows": [],
@@ -792,6 +888,7 @@ def analyze_field_usage(
                 "formula_fields": [],
                 "workflow_rules": [],
                 "page_layouts": [],
+                "flexipages": [],
                 "email_templates": [],
                 "reports": [],
                 "total_usage": 0
@@ -867,13 +964,33 @@ def analyze_field_usage(
 
             usage_data["page_layouts"] = layouts_with_field
 
-            # 8. Check Reports (from cache)
+            # 8. Check FlexiPages (from cache) - IMPROVED MATCHING
+            flexipages_with_field = []
+            for flexipage_name, field_list in metadata_cache["flexipages"].items():
+                # Check for exact match or case-insensitive match
+                for field_in_flexipage in field_list:
+                    if (field_api_name == field_in_flexipage or
+                        field_api_name.lower() == field_in_flexipage.lower()):
+                        flexipages_with_field.append(flexipage_name)
+                        logger.debug(f"✓ Found {field_api_name} in FlexiPage: {flexipage_name}")
+                        break
+
+            if not flexipages_with_field and metadata_cache["flexipages"]:
+                logger.debug(f"✗ {field_api_name} not found in any of {len(metadata_cache['flexipages'])} FlexiPages")
+                # Show first FlexiPage's fields for debugging
+                if metadata_cache["flexipages"]:
+                    first_flexipage = list(metadata_cache["flexipages"].items())[0]
+                    logger.debug(f"   Sample FlexiPage '{first_flexipage[0]}' has {len(first_flexipage[1])} fields: {first_flexipage[1][:5]}")
+
+            usage_data["flexipages"] = flexipages_with_field
+
+            # 9. Check Reports (from cache)
             usage_data["reports"] = [
                 report_name for report_name, report_data in metadata_cache["reports"].items()
                 if field_api_name in report_data or field_api_name.lower() in report_name.lower()
             ]
 
-            # 9. Check Email Templates (from cache) - NEW!
+            # 10. Check Email Templates (from cache)
             email_templates_with_field = []
             for email_name, email_content in metadata_cache["email_templates"].items():
                 if field_api_name in email_content:
@@ -894,6 +1011,7 @@ def analyze_field_usage(
                 len(usage_data["formula_fields"]) +
                 len(usage_data["workflow_rules"]) +
                 len(usage_data["page_layouts"]) +
+                len(usage_data["flexipages"]) +
                 len(usage_data["reports"]) +
                 len(usage_data["email_templates"])
             )
@@ -943,6 +1061,8 @@ def analyze_field_usage(
                     'Workflow Rules',
                     'Page Layouts Count',
                     'Page Layouts',
+                    'FlexiPages Count',
+                    'FlexiPages',
                     'Email Templates Count',
                     'Email Templates',
                     'Reports Count',
@@ -975,6 +1095,8 @@ def analyze_field_usage(
                         'Workflow Rules': ', '.join(result['workflow_rules']),
                         'Page Layouts Count': len(result['page_layouts']),
                         'Page Layouts': ', '.join(result['page_layouts']),
+                        'FlexiPages Count': len(result['flexipages']),
+                        'FlexiPages': ', '.join(result['flexipages']),
                         'Email Templates Count': len(result['email_templates']),
                         'Email Templates': ', '.join(result['email_templates']),
                         'Reports Count': len(result['reports']),
@@ -1004,6 +1126,7 @@ def analyze_field_usage(
                 "total_formula_fields": sum(len(r["formula_fields"]) for r in field_usage_results),
                 "total_workflow_rules": sum(len(r["workflow_rules"]) for r in field_usage_results),
                 "total_page_layouts": sum(len(r["page_layouts"]) for r in field_usage_results),
+                "total_flexipages": sum(len(r["flexipages"]) for r in field_usage_results),
                 "total_email_templates": sum(len(r["email_templates"]) for r in field_usage_results),
                 "total_reports": sum(len(r["reports"]) for r in field_usage_results)
             },

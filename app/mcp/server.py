@@ -1,32 +1,11 @@
 """MCP Server definition and tool registration"""
 import inspect
-import functools
 import pydantic
 from mcp.server.fastmcp import FastMCP
 import logging
 import os
 
 logger = logging.getLogger(__name__)
-
-def _license_gate(func):
-    """Wraps a tool function to check license before execution."""
-    @functools.wraps(func)
-    async def async_wrapper(*args, **kwargs):
-        from app.utils.auth_guard import is_license_valid, get_license_message
-        if not is_license_valid():
-            return get_license_message()
-        return await func(*args, **kwargs)
-
-    @functools.wraps(func)
-    def sync_wrapper(*args, **kwargs):
-        from app.utils.auth_guard import is_license_valid, get_license_message
-        if not is_license_valid():
-            return get_license_message()
-        return func(*args, **kwargs)
-
-    if inspect.iscoroutinefunction(func):
-        return async_wrapper
-    return sync_wrapper
 
 def parse_docstring(func):
     """A simple parser for a standard Python docstring."""
@@ -96,8 +75,8 @@ def add_tool_to_registry(func):
             "function": func
         }
         
-        # Register with MCP (wrapped with license check)
-        mcp_server.tool()(_license_gate(func))
+        # Register with MCP
+        mcp_server.tool()(func)
         logger.info(f"✅ Registered tool: '{tool_name}'")
         
     except Exception as e:
