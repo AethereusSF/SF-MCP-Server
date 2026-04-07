@@ -14,23 +14,26 @@
 
 ## ✨ What is This?
 
-Transform Claude Desktop into a **powerful Salesforce IDE** with 60 optimized tools for metadata management, testing, multi-org operations, and more. No manual API calls, no context switching - just natural language commands.
+Transform Claude Desktop into a **powerful Salesforce IDE** with optimized tools for metadata management, testing, multi-org operations, and more. No manual API calls, no context switching - just natural language commands.
 
-**NEW v2.0:** Tool consolidation reduces 106 tools → 57 tools (46% reduction) for better LLM performance!
-**NEW v2.1:** Added comprehensive debugging tool - diagnose and fix any Salesforce defect!
-**NEW v2.2:** Added `analyze_field_usage` - comprehensive field usage analysis across ALL metadata with CSV export!
-**NEW v2.3:** API-only authentication - reliable username/password login for Claude Desktop!
-**NEW v2.4:** Added `compare_page_layouts` - compare page layouts between orgs with full CSV diff report!
+**v2.0:** Tool consolidation reduces 106 tools → 57 tools (46% reduction) for better LLM performance!  
+**v2.1:** Added comprehensive debugging tool - diagnose and fix any Salesforce defect!  
+**v2.2:** Added `analyze_field_usage` - comprehensive field usage analysis across ALL metadata with CSV export!  
+**v2.3:** API-only authentication - reliable username/password login for Claude Desktop!  
+**v2.4:** Added `compare_page_layouts` - compare page layouts between orgs with full CSV diff report!  
+**v2.5:** Security hardening - SOQL injection protection across all tools, bulk upsert implemented, thread-local connection cache staleness fix!  
+**v2.6:** Enhanced `compare_profiles` and `compare_permission_sets` - now covers object, field, tab, app, Apex/VF page, and system permissions with full pagination!
 
 ### Key Features
 
 - 🔐 **API-Based Authentication** - Reliable username/password login that works perfectly in Claude Desktop
-- 🛠️ **60 Optimized Tools** - Complete Salesforce API coverage with LLM-friendly design
+- 🛠️ **57 Optimized Tools** - Complete Salesforce API coverage with LLM-friendly design
+- 🔒 **SOQL Injection Protection** - All user inputs escaped via `escape_soql_string()` throughout
 - 🎯 **Smart Infrastructure** - Caching, connection pooling, pagination, and enhanced error handling
 - 🔍 **Field Usage Analysis** - Analyze where 500+ fields are used across ALL metadata with CSV export
 - 🐛 **Intelligent Debugging** - Diagnose and fix triggers, flows, validations, fields, permissions, and more
 - 🌐 **Multi-Org Management** - Work with multiple orgs simultaneously and compare metadata
-- 📦 **Bulk Operations** - Handle thousands of records with Bulk API 2.0
+- 📦 **Bulk Operations** - Handle thousands of records with Bulk API 2.0 (insert/update/delete/upsert)
 - 🧪 **Apex Testing** - Run tests, get coverage, debug with full logs
 - 🔍 **Schema Analysis** - Analyze dependencies, find unused fields, generate ERDs
 - 📊 **Health Monitoring** - Check org limits, API usage, and system health
@@ -64,22 +67,8 @@ Use salesforce_login_username_password with:
 - domain: [from step 1]
 
 Step 3: Start using tools!
-Use execute_soql_query to run: SELECT Id, Name FROM Account LIMIT 10
+Use soql_query to run: SELECT Id, Name FROM Account LIMIT 10
 ```
-
-### License Key Setup
-
-Before running the server, you need a valid license key from MCP Admin.
-
-1. **Contact MCP Admin** to get your `APP_ENCRYPTION_KEY` and `APP_PASSWORD_ENC`
-2. **Add to `.env` file:**
-   ```env
-   APP_ENCRYPTION_KEY=your-key-from-admin
-   APP_PASSWORD_ENC=your-encrypted-password-from-admin
-   ```
-3. Keys are **rotated weekly** - contact MCP Admin for renewal when your key expires
-
-> Without a valid license key, the server will display: *"You don't have an active key. Please connect with MCP Admin to get access."*
 
 ### Installation
 
@@ -88,7 +77,7 @@ Before running the server, you need a valid license key from MCP Admin.
 ```bash
 # Clone repository
 git clone https://github.com/AethereusSF/SF-MCP-Server
-cd Salesforce-MCP-Server
+cd SF-MCP-Server
 
 # Run setup script (creates venv, installs dependencies, tests installation)
 .\setup.bat
@@ -101,7 +90,7 @@ That's it! `setup.bat` handles everything automatically - creates the virtual en
 ```bash
 # Clone repository
 git clone https://github.com/AethereusSF/SF-MCP-Server
-cd Salesforce-MCP-Server
+cd SF-MCP-Server
 
 # Make scripts executable
 chmod +x setup.sh start_mcp.sh start_http.sh
@@ -155,26 +144,24 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ---
 
-## 🛠️ Tool Categories (58 Total - Optimized for LLMs!)
+## 🛠️ Tool Categories (57 Total)
 
-### ⭐ NEW: Consolidated Tools (Core Operations)
-**Universal tools that replace 59 specialized tools:**
+### ⭐ Consolidated Tools (Core Operations)
+**Universal tools that replace many specialized tools:**
 
-- `deploy_metadata` - Deploy any metadata type (Apex, LWC, Fields, etc.) with single tool
+- `deploy_metadata` - Deploy any metadata type (Apex, LWC, Fields, etc.) with a single tool
 - `fetch_metadata` - Fetch any metadata type with consistent interface
-- `list_metadata` - List metadata of any type with filtering
-- `bulk_operation` - Unified bulk insert/update/delete operations
+- `list_metadata` - List metadata of any type with wildcard filtering
+- `bulk_operation` - Unified bulk insert / update / delete / **upsert** via Bulk API 2.0
 - `export_data` - Export data in CSV, JSON, or backup format
-- `soql_query` - Build and execute queries with optional analysis
+- `soql_query` - Build and execute SOQL queries with optional analysis
 - `get_object_metadata` - Get fields, relationships, and metadata in one call
-- `manage_user_permissions` - Manage profiles and permission sets
-
-**Benefits:** Easier for LLMs to select, more consistent API, flexible parameters
+- `manage_user_permissions` - Manage profiles and permission sets (set_profile / assign_permset / remove_permset / list)
 
 ### 🐛 Debugging & Defect-Solving (1)
 - `diagnose_and_fix_issue` - Comprehensive debugging for triggers, flows, validations, fields, permissions, formulas, picklists, lookups, layouts, and reports
 
-**Powered by 25 real-world QA scenario patterns:**
+**Powered by 26 real-world QA scenario patterns:**
 - Trigger recursion and SOQL limit issues
 - Flow null handling and decision logic
 - Validation rule date/required field errors
@@ -184,74 +171,57 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 - Report field visibility issues
 - Broken lookup relationships
 
-**Handles 10+ issue types with intelligent diagnosis, root cause analysis, and actionable fix recommendations.**
-
-### 🔐 Authentication & Sessions (6)
+### 🔐 Authentication & Sessions (7)
 - `salesforce_production_login` - OAuth to production org
 - `salesforce_sandbox_login` - OAuth to sandbox (test.salesforce.com)
 - `salesforce_custom_login` - OAuth to custom domain
-- `salesforce_login_username_password` - Login with username/password/token
+- `salesforce_login_username_password` - Login with username/password/token *(recommended)*
 - `salesforce_logout` - Clear all sessions
 - `salesforce_auth_status` - Check authentication status
+- `salesforce_get_domain_from_url` - Extract domain parameter from any Salesforce URL
 
 ### 🌐 Multi-Org Management (5)
 - `list_connected_orgs` - List all connected orgs
 - `switch_active_org` - Switch between orgs
-- `compare_metadata_between_orgs` - Compare Apex, Flows, etc.
-- `compare_object_schemas` - Compare field schemas
+- `compare_metadata_between_orgs` - Compare Apex, Flows, etc. across orgs
+- `compare_object_schemas` - Compare field schemas across orgs
 - `get_org_differences_summary` - High-level org comparison
 
-### 📝 Metadata Operations (60)
-**16 Metadata Types** × 3 Operations (fetch, create, upsert):
-- **Apex Classes** - Full CRUD operations
-- **Apex Triggers** - Create and manage triggers
-- **Validation Rules** - Deploy validation logic
-- **LWC (Lightning Web Components)** - Complete bundle management
-- **Custom Objects** - Create and configure objects
-- **Custom Fields** - Add fields to any object
-- **Flows** - Manage Flow definitions
-- **Email Templates** - Create email templates
-- **Permission Sets** - Configure permissions
-- **Static Resources** - Upload JavaScript, CSS, etc.
-- **Custom Metadata Types** - Configuration management
-- **Aura Components** - Legacy Lightning components
-- **Custom Labels** - Translation labels
-- **Record Types** - Object record types
-- **Quick Actions** - Create quick actions
-- **Custom Tabs** - Configure custom tabs
+### 📝 Metadata Operations (3 unified tools)
+**One tool handles all 16 metadata types:**
+
+| Tool | Supported Types |
+|------|----------------|
+| `deploy_metadata` | ApexClass, ApexTrigger, LWC, AuraComponent, CustomObject, CustomField, Flow, EmailTemplate, PermissionSet, StaticResource, CustomMetadataType, CustomLabel, RecordType, QuickAction, CustomTab *(ValidationRule — manual only)* |
+| `fetch_metadata` | All 16 types above |
+| `list_metadata` | ApexClass, ApexTrigger, CustomObject, Flow, PermissionSet, StaticResource |
 
 ### 🧪 Apex Testing & Debug (3)
 - `run_apex_tests` - Run tests with coverage
 - `get_apex_test_coverage` - Get code coverage details
 - `list_apex_test_classes` - List all test classes
 
-### 📦 Bulk Operations (4)
-- `bulk_insert_records` - Insert thousands via Bulk API 2.0
-- `bulk_update_records` - Update thousands of records
-- `bulk_delete_records` - Delete thousands of records
+### 📦 Bulk Operations
+- `bulk_operation` - Insert / update / delete / **upsert** (Bulk API 2.0, fully async with polling)
 - `get_bulk_job_status` - Check job progress
 
-### 💾 Data Export & Backup (5)
-- `export_data_to_csv` - Export SOQL results to CSV
-- `export_object_data` - Export entire objects
-- `backup_object_records` - Create timestamped backups
-- `get_record_count` - Fast record counting
-- `export_schema_to_json` - Export object schemas
+### 💾 Data Export & Backup (3)
+- `export_data` - Export as CSV / JSON / timestamped backup
+- `get_record_count` - Fast record counting with optional WHERE filter
+- `export_schema_to_json` - Export object schemas to JSON
 
-### 🔍 Query Helpers (5)
-- `build_soql_query` - Build queries from components
-- `get_object_fields` - Get field metadata
-- `get_field_relationships` - Get all relationships
-- `explain_soql_query` - Analyze and optimize queries
-- `query_with_related_records` - Query parent-child records
+### 🔍 SOQL & Query Helpers (2)
+- `soql_query` - Execute or auto-build SOQL; optional query analysis
+- `query_with_related_records` - Query parent + child records in one call
 
-### 📊 Schema Analysis (6)
-- `analyze_object_dependencies` - Full dependency analysis
-- `find_unused_fields` - Identify unused fields
+### 📊 Schema Analysis (7)
+- `analyze_object_dependencies` - Full dependency analysis (lookups, triggers, flows, VRs)
+- `find_unused_fields` - Identify fields with no Apex/trigger references
 - `generate_object_diagram` - Generate ERD data
-- `list_all_objects` - List all objects (custom/standard)
-- `get_field_usage_stats` - Field population statistics
-- **`analyze_field_usage`** - **NEW!** Comprehensive field usage analysis - find where fields are used across ALL metadata (Apex, Triggers, Flows, Validation Rules, Formulas, Page Layouts, Reports) with CSV export
+- `export_object_relationships` - Export relationship map
+- `extract_metadata_relationships` - Cross-metadata relationship analysis
+- `analyze_field_usage` - Where a field is used across ALL metadata with CSV export
+- `compare_field_presence` - Compare field presence across objects
 
 ### 🤖 Process Automation (8)
 - `list_batch_jobs` - List Batch Apex jobs
@@ -272,24 +242,28 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 - `get_api_usage_stats` - API usage statistics
 
 ### 🎯 Core Operations (2)
-- `execute_soql_query` - Run any SOQL query
+- `execute_soql_query` - Low-level SOQL execution
 - `get_metadata_deploy_status` - Check deployment status
 
-### 👥 User Management & Permissions (6)
-- `change_user_profile` - Change a user's profile
-- `assign_permission_set` - Assign permission set to a user
-- `remove_permission_set` - Remove permission set from a user
-- `list_user_permissions` - List user's permission sets and profile
+### 👥 User Management (backing functions)
+Exposed through `manage_user_permissions` consolidated tool:
+- set_profile, assign_permset, remove_permset, list
 - `list_available_profiles` - List all profiles in the org
 - `list_available_permission_sets` - List all permission sets in the org
 
 ### 🔄 Advanced Comparison Tools (6)
-- `compare_profiles` - Compare two profiles side-by-side
-- `compare_permission_sets` - Compare two permission sets
-- `compare_object_field_counts` - Compare field counts between orgs
+- `compare_profiles` - **Full comparison**: object, field, tab, app, Apex/VF page, and system permissions; `sections` parameter for targeted queries
+- `compare_permission_sets` - **Full comparison**: same coverage as profiles, fully paginated (no LIMIT caps); `sections` parameter
+- `compare_object_field_counts` - Compare field counts/types between orgs
 - `find_similar_fields_across_objects` - Find fields with similar names/types
 - `compare_org_object_counts` - Compare total object counts between orgs
-- **`compare_page_layouts`** - **NEW!** Compare page layouts between orgs — fields, sections, and related lists diff with CSV export
+- `compare_page_layouts` - Compare page layouts between orgs — fields, sections, related lists diff with CSV export
+
+### 📄 Documentation Tools (4)
+- `generate_brd_document` - Generate Business Requirements Document
+- `generate_design_document` - Generate Technical Design Document
+- `generate_test_document` - Generate Test Plan document
+- `generate_sf_object_documentation` - Generate object documentation
 
 ---
 
@@ -371,10 +345,10 @@ public class AccountService {
 
 ```
 # Bulk Insert
-"Bulk insert 1000 Account records with this CSV data: [...]"
+"Bulk insert these Account records: [...]"
 
-# Bulk Update
-"Bulk update all Contacts where State is null to set State = 'Unknown'"
+# Bulk Upsert (NEW - uses external ID field)
+"Bulk upsert Contacts using Email__c as the external ID: [...]"
 
 # Check Status
 "Check status of bulk job 7504x000000AbcD"
@@ -396,198 +370,93 @@ public class AccountService {
 "Export Account, Contact, and Opportunity schemas to JSON"
 ```
 
-### Field Usage Analysis (API-Based)
+### Advanced Comparison (v2.6)
 
 ```
-# Analyze single field (fast - excludes reports by default)
-"Where is the Case Status field used?"
-"Analyze usage of Account.Customer_Type__c field"
-
-# Analyze with reports included (slower but comprehensive)
-"Check if Case Status field is used in any reports"
-"Analyze Case.Priority including reports"
-
-# Analyze ALL fields on an object (handles 500+ fields)
-"Analyze all Case fields and show me where they are used"
-"Create a field usage report for all Account fields"
-
-# Analyze all fields including reports
-"Analyze all Case fields and check reports too"
-
-# Custom CSV output
-"Analyze all Opportunity fields and export to opportunity_audit.csv"
-
-# Results include usage in:
-# - Apex Classes (with class names) ✅ Always checked
-# - Apex Triggers (with trigger names) ✅ Always checked
-# - Flows (with flow names) ✅ Always checked
-# - Validation Rules (with rule names) ✅ Always checked
-# - Formula Fields (with field names) ✅ Always checked
-# - Workflow Rules ✅ Always checked
-# - Page Layouts ✅ Always checked
-# - Email Templates ✅ Always checked
-# - Reports ⚡ Optional (only if you say "include reports" or "check reports")
-```
-
-### Automation & Jobs
-
-```
-# Batch Jobs
-"Show all running batch jobs"
-"Get details for batch job 7074x000000AbcD"
-"Abort batch job 7074x000000AbcD"
-
-# Scheduled Jobs
-"List all scheduled Apex jobs"
-"Delete scheduled job 0884x000000XyzA"
-```
-
-### User Management
-
-```
-# Change User Profiles
-"Change profile for user john.doe@example.com to System Administrator"
-"Assign Standard User profile to jane.smith@example.com"
-
-# Manage Permission Sets
-"Assign Sales_User permission set to john.doe@example.com"
-"Remove Marketing_Access permission set from jane.smith@example.com"
-"List all permission sets for user john.doe@example.com"
-
-# Query Profiles and Permission Sets
-"List all available profiles in the org"
-"Show me all permission sets"
-```
-
-### Advanced Comparison
-
-```
-# Profile Comparison
+# Full profile comparison (all sections)
 "Compare System Administrator and Standard User profiles"
-"What are the differences between Sales User and Service User profiles?"
 
-# Permission Set Comparison
+# Targeted comparison (faster)
+"Compare object and field permissions between Sales User and Service User"
+→ compare_profiles("Sales User", "Service User", sections="objects,fields")
+
+# Permission set comparison
 "Compare Marketing_Admin and Marketing_User permission sets"
 
-# Cross-Org Comparison
+# Cross-org profile comparison
+"Compare System Administrator profile between production and sandbox"
+→ compare_profiles("System Administrator", "System Administrator", org2_user_id="005xx...", sections="all")
+
+# Compare object fields across orgs
 "Compare Account object fields between my two connected orgs"
-"Find similar fields across Account and Contact objects"
-"Compare total object counts between production and sandbox"
-```
 
-### Page Layout Comparison (NEW in v2.4!)
-
-```
-# Compare one layout between two orgs
+# Compare page layouts
 "Compare Account page layout between production and sandbox"
 → compare_page_layouts(
     layout_names="Account-Account Layout",
-    source_org_user_id="0051a000001XyzABC",
-    target_org_user_id="0051b000001DefGHI"
+    source_org_user_id="005xx...",
+    target_org_user_id="005yy..."
   )
+```
 
-# Compare multiple layouts at once
-"Compare Account, Contact, and Case layouts between my two orgs"
-→ compare_page_layouts(
-    layout_names="Account-Account Layout,Contact-Contact Layout,Case-Case Layout",
-    source_org_user_id="0051a000001XyzABC",
-    target_org_user_id="0051b000001DefGHI"
-  )
+### Field Usage Analysis
+
+```
+# Analyze single field
+"Where is the Case Status field used?"
+
+# Analyze ALL fields on an object
+"Analyze all Case fields and create a CSV report"
+
+# Include reports
+"Analyze Account.Customer_Type__c including reports"
 
 # Custom output filename
-"Compare Opportunity layout and save report as opp_layout_audit.csv"
-→ compare_page_layouts(
-    layout_names="Opportunity-Opportunity Layout",
-    source_org_user_id="0051a000001XyzABC",
-    target_org_user_id="0051b000001DefGHI",
-    output_filename="opp_layout_audit.csv"
-  )
+"Analyze Opportunity fields and save to opp_field_audit.csv"
 ```
 
 ---
 
 ## 🎓 Advanced Features
 
-### 🔍 Field Usage Analysis (NEW in v2.2!)
+### 🔄 Advanced Profile & Permission Set Comparison (v2.6)
 
-The **`analyze_field_usage`** tool provides comprehensive field usage analysis across your entire Salesforce org. Perfect for field audits, cleanup projects, and impact analysis before making changes.
+Both `compare_profiles` and `compare_permission_sets` now provide **full coverage** across all permission dimensions:
 
-#### What It Does
+| Section | What it checks |
+|---------|---------------|
+| `objects` | CRUD + ViewAll + ModifyAll per SObject |
+| `fields` | Read + Edit per field (fully paginated, no caps) |
+| `tabs` | Tab visibility (DefaultOn / DefaultOff / Hidden) |
+| `apps` | Apex class, VF page, custom permission access |
+| `system` | All ~150 boolean user permissions (PermissionsApiEnabled, PermissionsModifyAllData, etc.) |
 
-Analyzes where fields are used across **ALL metadata types**:
-- ✅ **Apex Classes** - Shows which classes reference the field
-- ✅ **Apex Triggers** - Identifies trigger dependencies
-- ✅ **Flows** - Finds flows using the field (including Process Builder)
-- ✅ **Validation Rules** - Checks validation rule formulas
-- ✅ **Formula Fields** - Identifies formula field dependencies
-- ✅ **Workflow Rules** - Finds workflow field criteria
-- ✅ **Page Layouts** - Shows layout field placement
-- ✅ **Reports** - Identifies reports using the field
-
-#### Use Cases
-
-1. **Field Cleanup** - Find unused fields before archiving
-2. **Impact Analysis** - Understand dependencies before changes
-3. **Compliance Audit** - Document field usage for auditors
-4. **Migration Planning** - Map field usage across orgs
-5. **Documentation** - Generate comprehensive field reference
-
-#### How to Use
+Use the `sections` parameter to run only the checks you need:
 
 ```
-# Analyze a single field
-"Where is the Case Status field used?"
+# Only object + field permissions (fast)
+compare_profiles("Admin", "Standard", sections="objects,fields")
 
-# Analyze ALL fields on an object (handles 500+ fields efficiently)
-"Analyze all Case fields and create a CSV report"
+# Only system permissions
+compare_profiles("Admin", "Standard", sections="system")
 
-# Custom output filename
-"Analyze Account fields and save to account_field_audit.csv"
+# Everything (default)
+compare_profiles("Admin", "Standard")
 ```
 
-#### CSV Output
+### 🔍 Field Usage Analysis
 
-The tool automatically generates a CSV file saved in the **`Documents/`** folder with these columns:
-- Field Name, Label, Type
-- Is Custom, Is Required
-- Apex Classes Count + Names
-- Triggers Count + Names
-- Flows Count + Names
-- Validation Rules Count + Names
-- Formula Fields Count + Names
-- Workflow Rules Count + Names
-- Page Layouts Count + Names
-- Reports Count + Names
-- Total Usage Count
-- Is Referenced (Yes/No)
+The `analyze_field_usage` tool provides comprehensive field usage analysis. Perfect for field audits, cleanup projects, and impact analysis.
 
-**Storage Location:** `Documents/{ObjectName}_field_usage_{timestamp}.csv`
+Checks usage in: Apex Classes, Apex Triggers, Flows, Validation Rules, Formula Fields, Workflow Rules, Page Layouts, Email Templates, Reports (optional).
 
-#### Performance
-
-**NEW in v2.2 - MASSIVELY IMPROVED:**
-- **5-6x faster** with intelligent batch processing
-- **500 fields analyzed in 5-10 minutes** (was 30-45 minutes!)
-- **99% fewer API calls** - Only ~15-20 calls for any field count
-- **Smart caching** - Fetches ALL metadata once, checks all fields against it
-- **Progress tracking** - Updates every 50 fields
-- **Memory efficient** - Handles unlimited fields
-
-**How it works:**
-1. Fetches all Apex, Triggers, Flows, Validations, Workflows, Layouts, Reports ONCE
-2. Caches everything in memory
-3. Checks all fields against cached data (instant!)
-4. Result: 500 fields in ~5-10 minutes instead of 45 minutes!
+CSV output saved to `Documents/{ObjectName}_field_usage_{timestamp}.csv`.
 
 ### Configuration
 
 Create a `.env` file (copy from `.env.example`):
 
 ```env
-# License Key (required - get from MCP Admin)
-APP_ENCRYPTION_KEY=your-encryption-key-here
-APP_PASSWORD_ENC=your-encrypted-password-here
-
 # Server Configuration
 SFMCP_MCP_SERVER_NAME=salesforce-mcp-server
 SFMCP_LOG_LEVEL=INFO
@@ -598,169 +467,123 @@ SFMCP_OAUTH_CALLBACK_PORT=1717
 SFMCP_OAUTH_TIMEOUT_SECONDS=300
 
 # API Configuration
-SFMCP_SALESFORCE_API_VERSION=59.0
+SFMCP_SALESFORCE_API_VERSION=62.0
 SFMCP_MAX_RETRIES=3
 SFMCP_REQUEST_TIMEOUT_SECONDS=120
 
 # Deployment
 SFMCP_DEPLOY_TIMEOUT_SECONDS=300
 SFMCP_DEPLOY_POLL_INTERVAL_SECONDS=5
-```
 
-> **Note:** The `APP_ENCRYPTION_KEY` and `APP_PASSWORD_ENC` are required to run the server. Contact your MCP Admin to get a valid license key. Keys are rotated weekly for security.
+# HTTP/SSE mode (optional)
+SFMCP_HTTP_HOST=0.0.0.0
+SFMCP_HTTP_PORT=8000
+SFMCP_API_KEY=change-this-before-deploying
+```
 
 ### 📁 Project Structure
 
 ```
-Salesforce-MCP-Server/
+SF-MCP-Server/
 ├── app/
 │   ├── main.py                          # Entry point, tool imports
 │   ├── config.py                        # Configuration management
 │   │
 │   ├── mcp/
 │   │   ├── server.py                    # MCP server setup, tool registration
-│   │   └── tools/                       # All 57 MCP tools
-│   │       ├── __init__.py
-│   │       ├── consolidated_metadata.py      # Unified metadata deploy/fetch/list
+│   │   └── tools/                       # All MCP tools
+│   │       ├── consolidated_metadata.py      # Unified deploy/fetch/list
 │   │       ├── consolidated_operations.py    # Bulk ops, export, queries, permissions
-│   │       ├── oauth_auth.py                 # OAuth 2.0 authentication
-│   │       ├── debugging.py                  # NEW: Issue diagnosis (25 QA patterns)
-│   │       ├── dynamic_tools.py              # Apex, triggers, flows, etc.
+│   │       ├── oauth_auth.py                 # OAuth 2.0 + username/password auth
+│   │       ├── debugging.py                  # Issue diagnosis (26 QA patterns)
+│   │       ├── dynamic_tools.py              # Low-level Metadata API helpers
 │   │       ├── multi_org.py                  # Multi-org management
-│   │       ├── advanced_comparison.py        # Profile/permset/schema comparison
-│   │       ├── user_management.py            # User profile/permission management
+│   │       ├── advanced_comparison.py        # Full profile/permset/schema comparison
+│   │       ├── user_management.py            # Backing user permission functions
 │   │       ├── schema_analysis.py            # Dependencies, unused fields, ERDs
 │   │       ├── org_management.py             # Health check, limits, org info
 │   │       ├── automation.py                 # Batch jobs, scheduled jobs
 │   │       ├── testing.py                    # Apex tests, coverage
-│   │       ├── bulk_operations.py            # Bulk API operations
-│   │       ├── data_export.py                # Export/backup tools
-│   │       ├── query_helpers.py              # Query builders
+│   │       ├── bulk_operations.py            # Bulk API backing functions
+│   │       ├── data_export.py                # Export/backup backing functions
+│   │       ├── query_helpers.py              # Query builder backing functions
+│   │       ├── documentation.py              # BRD/TDD/Test document generation
+│   │       ├── page_layout_comparison.py     # Page layout diff tool
 │   │       └── utils.py                      # Response formatting, error handling
 │   │
 │   ├── services/
-│   │   └── salesforce.py                # Salesforce connection management
+│   │   └── salesforce.py                # Connection management, token refresh
 │   │
-│   └── utils/                           # Production-grade utilities
-│       ├── __init__.py                  # Utility exports
-│       ├── validators.py                # SOQL injection protection, input validation
-│       ├── retry.py                     # Retry logic with exponential backoff
+│   └── utils/
+│       ├── validators.py                # SOQL injection protection, SafeSOQLBuilder
+│       ├── retry.py                     # Retry with exponential backoff
 │       ├── logging.py                   # Structured logging
-│       ├── cache.py                     # NEW: Caching system (LRU, metadata cache)
-│       ├── errors.py                    # NEW: Enhanced error handling
-│       ├── pagination.py                # NEW: Pagination utilities
-│       └── connection_pool.py           # NEW: Connection pooling
+│       ├── cache.py                     # LRU caching system
+│       ├── errors.py                    # Enhanced error handling
+│       ├── pagination.py                # Pagination utilities
+│       └── connection_pool.py           # Connection pooling
 │
 ├── requirements.txt                      # Dependencies
 ├── .env.example                          # Example configuration
-├── README.md                             # Main documentation
-├── test_all_mcp_tools.py                 # Comprehensive testing suite
-├── setup.bat                             # Windows setup script (one-click install)
-├── setup.sh                              # macOS/Linux setup script (one-click install)
-├── start_mcp.bat                         # Windows startup script (stdio mode)
-├── start_mcp.sh                          # macOS/Linux startup script (stdio mode)
-├── start_http.bat                        # Windows HTTP/SSE server startup
-├── start_http.sh                         # macOS/Linux HTTP/SSE server startup
-└── Documents/                            # CSV exports and reports stored here
-    ├── README.md                         # Documents folder info
-    └── *.csv                             # Field usage reports, data exports
+├── CLAUDE.md                             # Developer guide for Claude Code
+├── README.md                             # This file
+├── setup.bat / setup.sh                  # One-click setup scripts
+├── start_mcp.bat / start_mcp.sh          # stdio mode startup
+└── start_http.bat / start_http.sh        # HTTP/SSE mode startup
 ```
-
-**Total Size:** 12,500+ lines of Python code (tools only)
 
 ### Retry Logic
 
 All API calls automatically retry with exponential backoff:
-- Max attempts: 3 (configurable)
+- Max attempts: 3 (configurable via `SFMCP_MAX_RETRIES`)
 - Backoff multiplier: 2.0
 - Handles transient failures gracefully
 
-### Input Validation
+### Security
 
-Built-in protection against:
-- SOQL injection
-- Invalid metadata names
-- Malformed API requests
-- Unsafe operations
-
-### Structured Logging
-
-Track all operations with correlation IDs:
-- Request tracking
-- Error debugging
-- Performance monitoring
-- Audit trails
-
-### Advanced Infrastructure
-
-Built-in production-grade utilities for optimal performance:
-
-#### Caching System
-- **LRU cache** for metadata and field definitions
-- **Automatic cache invalidation** with TTL
-- **Validation rule caching** for faster lookups
-- Significant performance improvements for repeated queries
-
-#### Enhanced Error Handling
-- **Custom `SalesforceError` exception** with error categories
-- **Error categories:** auth, query, deployment, bulk operations
-- **Troubleshooting hints** embedded in error messages
-- **Structured error responses** with actionable suggestions
-
-#### Pagination Support
-- **Cursor-based pagination** for large result sets
-- **SOQL pagination helpers** with automatic batching
-- **List pagination** for API responses
-- Handle datasets of any size efficiently
-
-#### Connection Pooling
-- **Multi-org connection pooling** with state management
-- **Thread-local storage** for connection isolation
-- **Pool statistics** and monitoring
-- **Automatic cleanup** of stale connections
+- **SOQL injection protection** — all user-supplied values wrapped with `escape_soql_string()` / `escape_soql_like()` before query interpolation
+- **SafeSOQLBuilder** available for programmatic query construction
+- **OAuth tokens** stored in-memory only — cleared on process restart
+- **HTTPS required** for custom domain OAuth flows
 
 ---
 
 ## 🔧 Troubleshooting
 
-### "You don't have an active key"
-**Solution:** Contact MCP Admin to get your `APP_ENCRYPTION_KEY` and `APP_PASSWORD_ENC`, then add them to your `.env` file.
-
-### "Invalid or expired license key"
-**Solution:** Your weekly license key has expired. Contact MCP Admin for a new key.
-
 ### "No active Salesforce sessions found"
-**Solution:** Login first: `"Login to Salesforce production"`
+Login first:
+```
+"Login to Salesforce production"
+```
+Or use username/password: `salesforce_login_username_password`
 
 ### "Token expired"
-**Solution:** Logout and re-login:
+Logout and re-login:
 ```
 "Logout from all Salesforce orgs"
 "Login to Salesforce production"
 ```
 
 ### "Deployment timeout"
-**Solution:** Increase timeout in `.env`:
+Increase timeout in `.env`:
 ```env
 SFMCP_DEPLOY_TIMEOUT_SECONDS=600
 ```
 
 ### "API limit exceeded"
-**Solution:** Check limits: `"Get org limits"`
+Check limits: `"Get org limits"`
 
 ### "Wrong org being used"
-**Solution:**
 ```
 "List connected orgs"
 "Switch to org [user_id]"
 ```
 
 ### Tools not showing in Claude
-**Solution:**
-1. Check Claude Desktop config file
+1. Check Claude Desktop config file path
 2. Verify absolute path is correct
 3. Restart Claude Desktop
-4. Check logs: `%APPDATA%\Claude\logs\`
+4. Check logs: `%APPDATA%\Claude\logs\` (Windows)
 
 ---
 
@@ -770,12 +593,12 @@ We welcome contributions! See our [Contributing Guide](CONTRIBUTING.md) for deta
 
 ### Adding New Tools
 
-1. **Create tool function** in appropriate module under `app/mcp/tools/`
-2. **Add `@register_tool` decorator**
-3. **Write docstring** with examples
-4. **Add attribution**: `"Added by Sameer"` in docstring
-5. **Test thoroughly** before submitting PR
-6. **Update documentation** in `COMPLETE_GUIDE.md`
+1. Create tool function in the appropriate module under `app/mcp/tools/`
+2. Add `@register_tool` decorator
+3. Write a clear docstring — first line is the tool description, then `Args:` section
+4. Import the module in `app/main.py`
+5. Return a JSON string using `format_success_response()` / `format_error_response()`
+6. Always escape user inputs: `escape_soql_string(value)` before SOQL interpolation
 
 ### Testing Requirements
 
@@ -784,7 +607,6 @@ Before submitting PRs:
 - ✅ New tools must include test scenarios
 - ✅ Test in sandbox environment first
 - ✅ Document any API limit implications
-
 
 ## ⚖️ License
 
@@ -801,11 +623,4 @@ MIT License - See [LICENSE](LICENSE) for details
 
 ---
 
-## 🌟 Star History
-
-If this project saved you time, please star the repository! ⭐
-
----
-
-**Built with ☕, code, and curiosity by Sameer** 
-
+**Built with ☕, code, and curiosity by Sameer**
