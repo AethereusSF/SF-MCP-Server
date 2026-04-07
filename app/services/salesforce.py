@@ -19,6 +19,21 @@ except ImportError:
 # Thread-local storage
 local = threading.local()
 
+def _resolve_token(user_id, stored_tokens):
+    """Pick the token dict to use, applying multi-org active-org logic."""
+    if user_id and user_id in stored_tokens:
+        return user_id, stored_tokens[user_id]
+    try:
+        from app.mcp.tools.multi_org import _active_org
+        if _active_org.get("user_id") and _active_org["user_id"] in stored_tokens:
+            uid = _active_org["user_id"]
+            return uid, stored_tokens[uid]
+    except ImportError:
+        pass
+    uid, tok = next(iter(stored_tokens.items()))
+    return uid, tok
+
+
 def get_salesforce_connection(user_id: str = None):
     """
     Get Salesforce connection using OAuth tokens (no config required).
@@ -32,60 +47,59 @@ def get_salesforce_connection(user_id: str = None):
     Returns:
         Salesforce connection instance
     """
-    if not hasattr(local, 'sf_connection') or local.sf_connection is None:
-        logger.info("🔗 Creating Salesforce connection...")
+    if not OAUTH_AVAILABLE:
+        raise Exception("OAuth not available. Please ensure oauth_auth module is imported.")
 
-        if not OAUTH_AVAILABLE:
-            raise Exception("OAuth not available. Please ensure oauth_auth module is imported.")
+    stored_tokens = get_stored_tokens()
+    if not stored_tokens:
+        raise Exception(
+            "❌ No active Salesforce sessions found.\n"
+            "Please run one of these commands first:\n"
+            "- salesforce_production_login() - for production orgs\n"
+            "- salesforce_sandbox_login() - for sandbox orgs\n"
+            "- salesforce_custom_login('https://yourorg.my.salesforce.com') - for custom domains"
+        )
 
-        stored_tokens = get_stored_tokens()
-        if not stored_tokens:
-            raise Exception(
-                "❌ No active Salesforce sessions found.\n"
-                "Please run one of these commands first:\n"
-                "- salesforce_production_login() - for production orgs\n"
-                "- salesforce_sandbox_login() - for sandbox orgs\n"
-                "- salesforce_custom_login('https://yourorg.my.salesforce.com') - for custom domains"
-            )
+    # Resolve which user/token to use before touching the cache
+    selected_user, token_data = _resolve_token(user_id, stored_tokens)
 
-        # Select token - check for active org from multi_org module
-        if user_id and user_id in stored_tokens:
-            token_data = stored_tokens[user_id]
-            selected_user = user_id
-        else:
-            # Try to get active org from multi_org module
-            try:
-                from app.mcp.tools.multi_org import _active_org
-                if _active_org.get("user_id") and _active_org["user_id"] in stored_tokens:
-                    selected_user = _active_org["user_id"]
-                    token_data = stored_tokens[selected_user]
-                    logger.info(f"Using active org: {selected_user}")
-                else:
-                    selected_user, token_data = next(iter(stored_tokens.items()))
-            except ImportError:
-                selected_user, token_data = next(iter(stored_tokens.items()))
+    # Per-org connection cache keyed by selected_user
+    if not hasattr(local, 'sf_connections'):
+        local.sf_connections = {}
 
-        # Check token age and refresh if needed
-        config = get_config()
+    config = get_config()
+
+    # Evict stale cached connection for this org
+    if selected_user in local.sf_connections:
         token_age = time.time() - token_data['login_timestamp']
         if token_age > config.token_refresh_threshold_seconds:
-            logger.info(f"🔄 Refreshing token for {selected_user}...")
+            logger.info("Cached connection for %s is stale — refreshing", selected_user)
+            del local.sf_connections[selected_user]
+
+    if selected_user not in local.sf_connections:
+        logger.info("🔗 Creating Salesforce connection for %s...", selected_user)
+
+        # Refresh token if needed
+        token_age = time.time() - token_data['login_timestamp']
+        if token_age > config.token_refresh_threshold_seconds:
+            logger.info("🔄 Refreshing token for %s...", selected_user)
             if not refresh_salesforce_token(selected_user):
                 raise Exception(f"Failed to refresh token for {selected_user}. Please login again.")
-            # Get updated token
             token_data = get_stored_tokens()[selected_user]
 
-        # Create connection
-        local.sf_connection = Salesforce(
+        local.sf_connections[selected_user] = Salesforce(
             instance_url=token_data['instance_url'],
             session_id=token_data['access_token']
         )
+        logger.info("✅ Connected to %s as user %s", token_data['instance_url'], selected_user)
 
-        logger.info(f"✅ Connected to {token_data['instance_url']} as user {selected_user}")
+    return local.sf_connections[selected_user]
 
-    return local.sf_connection
-
-def clear_connection_cache():
-    """Clear connection cache to force new connection"""
-    if hasattr(local, 'sf_connection'):
-        local.sf_connection = None
+def clear_connection_cache(user_id: str = None):
+    """Clear connection cache to force new connection. Pass user_id to clear one org only."""
+    if not hasattr(local, 'sf_connections'):
+        return
+    if user_id:
+        local.sf_connections.pop(user_id, None)
+    else:
+        local.sf_connections.clear()
