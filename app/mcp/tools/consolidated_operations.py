@@ -8,6 +8,8 @@ import json
 import logging
 import csv
 import io
+import time
+import requests
 from typing import Optional, List, Dict, Any
 
 from app.mcp.server import register_tool
@@ -24,6 +26,86 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # BULK OPERATIONS (4 → 2 tools)
 # ============================================================================
+
+def _bulk_upsert_records(object_name: str, records_input, external_id_field: str) -> str:
+    """Internal helper: Bulk API 2.0 upsert using externalIdFieldName."""
+    try:
+        sf = get_salesforce_connection()
+
+        # Parse records if JSON string
+        if isinstance(records_input, str):
+            records = json.loads(records_input)
+        else:
+            records = records_input
+
+        if not records:
+            return format_error_response(Exception("No records provided"), context="bulk_upsert")
+
+        # Convert to CSV
+        csv_buffer = io.StringIO()
+        writer = csv.DictWriter(csv_buffer, fieldnames=records[0].keys())
+        writer.writeheader()
+        writer.writerows(records)
+        csv_data = csv_buffer.getvalue()
+
+        headers_json = {"Authorization": f"Bearer {sf.session_id}", "Content-Type": "application/json"}
+        headers_csv = {"Authorization": f"Bearer {sf.session_id}", "Content-Type": "text/csv"}
+        job_endpoint = f"{sf.base_url}jobs/ingest"
+
+        # Create upsert job
+        job_data = {
+            "object": object_name,
+            "operation": "upsert",
+            "externalIdFieldName": external_id_field,
+            "lineEnding": "CRLF"
+        }
+        resp = requests.post(job_endpoint, headers=headers_json, json=job_data, timeout=30)
+        resp.raise_for_status()
+        job_id = resp.json()["id"]
+        logger.info(f"Created bulk upsert job: {job_id}")
+
+        # Upload CSV
+        requests.put(f"{job_endpoint}/{job_id}/batches", headers=headers_csv, data=csv_data, timeout=60).raise_for_status()
+
+        # Mark upload complete
+        requests.patch(f"{job_endpoint}/{job_id}", headers=headers_json, json={"state": "UploadComplete"}, timeout=30).raise_for_status()
+        logger.info(f"Started processing bulk upsert job: {job_id}")
+
+        # Poll for completion (up to 300 s)
+        close_endpoint = f"{job_endpoint}/{job_id}"
+        start = time.time()
+        while time.time() - start < 300:
+            status_resp = requests.get(close_endpoint, headers=headers_json, timeout=30)
+            status_resp.raise_for_status()
+            job_status = status_resp.json()
+            state = job_status["state"]
+            logger.info(f"Bulk upsert job {job_id} state: {state}")
+            if state in ["JobComplete", "Failed", "Aborted"]:
+                result = {
+                    "success": state == "JobComplete",
+                    "job_id": job_id,
+                    "state": state,
+                    "records_processed": job_status.get("numberRecordsProcessed", 0),
+                    "records_failed": job_status.get("numberRecordsFailed", 0),
+                    "external_id_field": external_id_field,
+                }
+                if job_status.get("numberRecordsFailed", 0) > 0:
+                    failed_resp = requests.get(
+                        f"{job_endpoint}/{job_id}/failedResults",
+                        headers={"Authorization": f"Bearer {sf.session_id}"},
+                        timeout=30
+                    )
+                    if failed_resp.status_code == 200:
+                        result["failed_records"] = failed_resp.text
+                return format_success_response(result) if state == "JobComplete" else json.dumps(result, indent=2)
+            time.sleep(5)
+
+        return format_error_response(Exception(f"Upsert job {job_id} timed out after 300 seconds"), context="bulk_upsert")
+
+    except Exception as e:
+        logger.exception("_bulk_upsert_records failed")
+        return format_error_response(e, context="bulk_upsert")
+
 
 @register_tool
 def bulk_operation(
@@ -103,12 +185,7 @@ def bulk_operation(
             return bulk_operations.bulk_delete_records(object_name, records)
 
         elif operation == "upsert":
-            # Note: Original bulk_operations may not have upsert, so we'll use insert for now
-            # You can enhance this later
-            return format_error_response(
-                Exception("Upsert operation not yet implemented. Use insert or update."),
-                context="bulk_operation"
-            )
+            return _bulk_upsert_records(object_name, records, external_id_field)
 
     except Exception as e:
         logger.exception("bulk_operation failed")

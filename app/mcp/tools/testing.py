@@ -9,6 +9,7 @@ from typing import List, Optional, Dict, Any
 
 from app.mcp.server import register_tool
 from app.services.salesforce import get_salesforce_connection
+from app.utils.validators import escape_soql_string
 from app.mcp.tools.utils import (
     format_error_response,
     format_success_response,
@@ -65,7 +66,7 @@ def run_apex_tests(
         start_time = time.time()
         while time.time() - start_time < max_wait_seconds:
             # Query test run status
-            query = f"SELECT Id, Status, ClassesCompleted, ClassesEnqueued, MethodsEnqueued, MethodsCompleted FROM ApexTestRunResult WHERE AsyncApexJobId = '{test_run_id}'"
+            query = f"SELECT Id, Status, ClassesCompleted, ClassesEnqueued, MethodsEnqueued, MethodsCompleted FROM ApexTestRunResult WHERE AsyncApexJobId = '{escape_soql_string(test_run_id)}'"
             result = sf.toolingexecute(f"query/?q={query}")
 
             if result.get("records"):
@@ -84,7 +85,7 @@ def run_apex_tests(
                         SELECT Id, ApexClassId, ApexClass.Name, MethodName, Outcome,
                                Message, StackTrace, RunTime
                         FROM ApexTestResult
-                        WHERE AsyncApexJobId = '{test_run_id}'
+                        WHERE AsyncApexJobId = '{escape_soql_string(test_run_id)}'
                     """
                     test_results = sf.toolingexecute(f"query/?q={results_query}")
 
@@ -175,7 +176,7 @@ def get_apex_test_coverage(class_name: Optional[str] = None) -> str:
         """
 
         if class_name:
-            query += f" WHERE ApexClassOrTrigger.Name = '{class_name}'"
+            query += f" WHERE ApexClassOrTrigger.Name = '{escape_soql_string(class_name)}'"
 
         result = sf.toolingexecute(f"query/?q={query}")
         records = result.get("records", [])

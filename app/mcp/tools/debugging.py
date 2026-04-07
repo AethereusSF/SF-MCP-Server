@@ -1084,8 +1084,8 @@ def diagnose_and_fix_issue(
                             "note": "⚠️ No triggers currently exist on this object. Analysis is based on the described issue.",
                             "suggestion": f"Consider creating a trigger named 'AlertTrigger' or similar on {normalized_object}"
                         }
-                except:
-                    pass
+                except Exception:
+                    logger.debug("Trigger detection lookup failed", exc_info=True)
         elif issue_type in ["flow", "process_builder", "workflow"]:
             result = _diagnose_flow_issue(sf, description, object_name, component_name, auto_fix, detected_scenario)
         elif issue_type in ["validation", "validation_rule", "validationrule"]:

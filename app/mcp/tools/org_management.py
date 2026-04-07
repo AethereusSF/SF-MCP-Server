@@ -8,6 +8,7 @@ from typing import Optional
 
 from app.mcp.server import register_tool
 from app.services.salesforce import get_salesforce_connection
+from app.utils.validators import escape_soql_string
 from app.mcp.tools.utils import (
     format_error_response,
     format_success_response,
@@ -253,7 +254,7 @@ def get_current_user_info() -> str:
                 SELECT Id, Username, Name, Email, Profile.Name, UserRole.Name,
                        IsActive, UserType, LastLoginDate, CreatedDate
                 FROM User
-                WHERE Id = '{user_id}'
+                WHERE Id = '{escape_soql_string(user_id)}'
                 LIMIT 1
             """
 
@@ -284,19 +285,19 @@ def list_installed_packages() -> str:
     try:
         sf = get_salesforce_connection()
 
-        query = """
-            SELECT Id, SubscriberPackageId, SubscriberPackage.Name,
-                   SubscriberPackage.NamespacePrefix,
-                   SubscriberPackageVersion.Name,
-                   SubscriberPackageVersion.MajorVersion,
-                   SubscriberPackageVersion.MinorVersion,
-                   SubscriberPackageVersion.PatchVersion,
-                   SubscriberPackageVersion.BuildNumber
-            FROM InstalledSubscriberPackage
-            ORDER BY SubscriberPackage.Name
-        """
+        # InstalledSubscriberPackage is only queryable via Tooling API
+        query = ("SELECT Id, SubscriberPackageId, SubscriberPackage.Name, "
+                 "SubscriberPackage.NamespacePrefix, "
+                 "SubscriberPackageVersion.Name, "
+                 "SubscriberPackageVersion.MajorVersion, "
+                 "SubscriberPackageVersion.MinorVersion, "
+                 "SubscriberPackageVersion.PatchVersion, "
+                 "SubscriberPackageVersion.BuildNumber "
+                 "FROM InstalledSubscriberPackage "
+                 "ORDER BY SubscriberPackage.Name")
 
-        result = sf.query(query)
+        import urllib.parse
+        result = sf.toolingexecute(f"query/?q={urllib.parse.quote(query)}")
         packages = result.get("records", [])
 
         response = {
@@ -335,15 +336,14 @@ def get_api_usage_stats(days: int = 7) -> str:
         import datetime
         start_date = (datetime.datetime.now() - datetime.timedelta(days=days)).strftime("%Y-%m-%dT00:00:00Z")
 
-        # Query EventLogFile for API usage
-        query = f"""
-            SELECT LogDate, ApiType, ApiVersion, Method, COUNT(Id)
-            FROM EventLogFile
-            WHERE LogDate >= {start_date}
-            AND EventType = 'API'
-            GROUP BY LogDate, ApiType, ApiVersion, Method
-            ORDER BY LogDate DESC
-        """
+        # EventLogFile: list API event log files for the period.
+        # The object does not support GROUP BY or computed fields —
+        # actual per-request data lives inside the downloadable LogFile CSV.
+        query = (f"SELECT Id, LogDate, EventType, ApiVersion, LogFileLength "
+                 f"FROM EventLogFile "
+                 f"WHERE LogDate >= {start_date} "
+                 f"AND EventType = 'API' "
+                 f"ORDER BY LogDate DESC")
 
         result = sf.query(query)
         usage_stats = result.get("records", [])

@@ -11,6 +11,7 @@ from simple_salesforce import Salesforce
 from app.config import get_config
 from app.mcp.server import register_tool
 from app.mcp.tools.oauth_auth import get_stored_tokens, refresh_salesforce_token
+from app.utils.validators import escape_soql_string
 
 logger = logging.getLogger(__name__)
 
@@ -187,7 +188,7 @@ def compare_metadata_between_orgs(
 
         # Filter by names if provided
         if metadata_names:
-            names_str = "', '".join(metadata_names)
+            names_str = "', '".join(escape_soql_string(n) for n in metadata_names)
             source_query += f" WHERE Name IN ('{names_str}')" if "ApexClass" in metadata_type or "ApexTrigger" in metadata_type else ""
 
         # Execute queries

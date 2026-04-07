@@ -15,7 +15,7 @@ from simple_salesforce import Salesforce
 from app.mcp.server import register_tool
 from app.config import get_config
 from app.utils.retry import retry
-from app.utils.validators import validate_url
+from app.utils.validators import validate_url, escape_soql_string
 
 logger = logging.getLogger(__name__)
 
@@ -274,8 +274,8 @@ def _do_login(org_type: str, auth_url: str) -> str:
                 callback_data = _oauth_callback_data.pop(state)
                 try:
                     server.shutdown()
-                except:
-                    pass  # Ignore server shutdown errors
+                except Exception:
+                    logger.debug("Server shutdown error ignored", exc_info=True)
                 
                 # Get token
                 token_url = f"{auth_url}/services/oauth2/token"
@@ -314,7 +314,7 @@ def _do_login(org_type: str, auth_url: str) -> str:
                     try:
                         error_json = response.json()
                         error_detail = f"{error_json.get('error', 'unknown')}: {error_json.get('error_description', 'No description')}"
-                    except:
+                    except Exception:
                         error_detail = f"HTTP {response.status_code}: {str(http_err)}"
 
                     return _create_json_response(
@@ -336,8 +336,8 @@ def _do_login(org_type: str, auth_url: str) -> str:
                 error_data = _oauth_callback_data.pop('error')
                 try:
                     server.shutdown()
-                except:
-                    pass
+                except Exception:
+                    logger.debug("Server shutdown error ignored", exc_info=True)
                 return _create_json_response(
                     False,
                     error="OAuth authorization failed",
@@ -350,8 +350,8 @@ def _do_login(org_type: str, auth_url: str) -> str:
         # Timeout case
         try:
             server.shutdown()
-        except:
-            pass
+        except Exception:
+            logger.debug("Server shutdown error ignored", exc_info=True)
         return _create_json_response(False, error="Login timeout")
         
     except Exception as e:
@@ -430,7 +430,8 @@ def refresh_salesforce_token(user_id: str) -> bool:
         })
 
         return True
-    except:
+    except Exception:
+        logger.debug("Token refresh failed", exc_info=True)
         return False
 
 @register_tool
@@ -543,7 +544,7 @@ def salesforce_login_username_password(username: str, password: str, security_to
         )
 
         # Get the actual User ID by querying UserInfo
-        user_query = sf.query("SELECT Id FROM User WHERE Username = '{}'".format(username))
+        user_query = sf.query("SELECT Id FROM User WHERE Username = '{}'".format(escape_soql_string(username)))
         if user_query['totalSize'] == 0:
             raise Exception(f"Could not find user with username: {username}")
 

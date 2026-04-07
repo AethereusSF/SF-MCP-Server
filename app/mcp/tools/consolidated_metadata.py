@@ -10,7 +10,7 @@ from typing import Optional, Dict, Any, List
 
 from app.mcp.server import register_tool
 from app.services.salesforce import get_salesforce_connection
-from app.utils.validators import validate_api_name, ValidationError
+from app.utils.validators import validate_api_name, ValidationError, escape_soql_like
 from app.mcp.tools.utils import format_error_response, format_success_response
 
 # Import existing implementation functions to reuse logic
@@ -690,42 +690,42 @@ def list_metadata(
         if normalized_type in ["ApexClass", "apex", "class"]:
             query = f"SELECT Id, Name, ApiVersion, Status, LengthWithoutComments FROM ApexClass LIMIT {limit}"
             if name_pattern != "*":
-                pattern = name_pattern.replace("*", "%").replace("?", "_")
+                pattern = escape_soql_like(name_pattern.replace("*", "%").replace("?", "_"))
                 query = f"SELECT Id, Name, ApiVersion, Status, LengthWithoutComments FROM ApexClass WHERE Name LIKE '{pattern}' LIMIT {limit}"
             result = sf.query(query)
 
         elif normalized_type in ["ApexTrigger", "trigger"]:
             query = f"SELECT Id, Name, TableEnumOrId, Status, ApiVersion FROM ApexTrigger LIMIT {limit}"
             if name_pattern != "*":
-                pattern = name_pattern.replace("*", "%").replace("?", "_")
+                pattern = escape_soql_like(name_pattern.replace("*", "%").replace("?", "_"))
                 query = f"SELECT Id, Name, TableEnumOrId, Status, ApiVersion FROM ApexTrigger WHERE Name LIKE '{pattern}' LIMIT {limit}"
             result = sf.query(query)
 
         elif normalized_type in ["CustomObject", "object"]:
             query = f"SELECT QualifiedApiName, Label, PluralLabel FROM EntityDefinition WHERE IsCustomizable = true LIMIT {limit}"
             if name_pattern != "*":
-                pattern = name_pattern.replace("*", "%").replace("?", "_")
+                pattern = escape_soql_like(name_pattern.replace("*", "%").replace("?", "_"))
                 query = f"SELECT QualifiedApiName, Label, PluralLabel FROM EntityDefinition WHERE IsCustomizable = true AND QualifiedApiName LIKE '{pattern}' LIMIT {limit}"
             result = sf.query(query)
 
         elif normalized_type in ["Flow", "flow"]:
             query = f"SELECT Id, ApiName, Label, ProcessType, Status FROM FlowDefinitionView LIMIT {limit}"
             if name_pattern != "*":
-                pattern = name_pattern.replace("*", "%").replace("?", "_")
+                pattern = escape_soql_like(name_pattern.replace("*", "%").replace("?", "_"))
                 query = f"SELECT Id, ApiName, Label, ProcessType, Status FROM FlowDefinitionView WHERE ApiName LIKE '{pattern}' LIMIT {limit}"
             result = sf.query(query)
 
         elif normalized_type in ["PermissionSet", "permset"]:
             query = f"SELECT Id, Name, Label, Description, IsOwnedByProfile FROM PermissionSet WHERE IsOwnedByProfile = false LIMIT {limit}"
             if name_pattern != "*":
-                pattern = name_pattern.replace("*", "%").replace("?", "_")
+                pattern = escape_soql_like(name_pattern.replace("*", "%").replace("?", "_"))
                 query = f"SELECT Id, Name, Label, Description FROM PermissionSet WHERE IsOwnedByProfile = false AND Name LIKE '{pattern}' LIMIT {limit}"
             result = sf.query(query)
 
         elif normalized_type in ["StaticResource", "static"]:
             query = f"SELECT Id, Name, ContentType, BodyLength FROM StaticResource LIMIT {limit}"
             if name_pattern != "*":
-                pattern = name_pattern.replace("*", "%").replace("?", "_")
+                pattern = escape_soql_like(name_pattern.replace("*", "%").replace("?", "_"))
                 query = f"SELECT Id, Name, ContentType, BodyLength FROM StaticResource WHERE Name LIKE '{pattern}' LIMIT {limit}"
             result = sf.query(query)
 

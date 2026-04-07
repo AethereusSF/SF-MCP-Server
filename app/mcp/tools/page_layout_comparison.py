@@ -55,8 +55,12 @@ def _get_org_credentials(user_id: Optional[str]) -> Tuple[str, str, str]:
             f"No active session found for org user_id='{user_id}'. "
             "Run list_connected_orgs to see connected orgs, then login first."
         )
-    t = tokens[user_id]
-    return t["instance_url"], t["access_token"], api_version
+    # Use get_salesforce_connection() so simple-salesforce properly resolves
+    # the session_id — the raw access_token may differ from the SOAP session ID
+    # needed by the Metadata API.
+    sf = get_salesforce_connection(user_id)
+    instance_url = f"https://{sf.sf_instance}"
+    return instance_url, sf.session_id, api_version
 
 
 # ─────────────────────────────────────────────────────────────────────────────

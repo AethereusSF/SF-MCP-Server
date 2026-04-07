@@ -5,10 +5,146 @@ Compares profiles, permission sets, objects, and fields across orgs
 Created by Sameer
 """
 import json
-from typing import Dict, List, Set, Any
+import logging
+from typing import Dict, List, Set, Any, Optional
 from app.mcp.server import register_tool
 from app.services.salesforce import get_salesforce_connection
 from app.mcp.tools.oauth_auth import get_stored_tokens
+from app.utils.validators import escape_soql_string
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+def _query_all(sf, query: str) -> List[Dict]:
+    """Execute SOQL and follow every nextRecordsUrl page — returns all records."""
+    result = sf.query(query)
+    records = list(result.get('records', []))
+    while not result.get('done', True) and result.get('nextRecordsUrl'):
+        result = sf.query_more(result['nextRecordsUrl'], identifier_is_url=True)
+        records.extend(result.get('records', []))
+    return records
+
+
+def _get_system_perm_fields(sf) -> List[str]:
+    """Return every boolean Permissions* field name on the PermissionSet object."""
+    try:
+        desc = sf.PermissionSet.describe()
+        return [f['name'] for f in desc['fields']
+                if f['name'].startswith('Permissions') and f['type'] == 'boolean']
+    except Exception:
+        logger.debug("Could not describe PermissionSet", exc_info=True)
+        return []
+
+
+def _get_system_permissions(sf, parent_id: str) -> Dict[str, bool]:
+    """Query all system permission boolean fields for a Profile/PermissionSet id."""
+    fields = _get_system_perm_fields(sf)
+    if not fields:
+        return {}
+    result: Dict[str, bool] = {}
+    safe_id = escape_soql_string(parent_id)
+    # SOQL SELECT has no hard cap on columns but batching at 150 keeps query strings safe
+    for i in range(0, len(fields), 150):
+        batch = fields[i:i + 150]
+        q = f"SELECT {', '.join(batch)} FROM PermissionSet WHERE Id = '{safe_id}' LIMIT 1"
+        try:
+            recs = sf.query(q).get('records', [])
+            if recs:
+                result.update({k: v for k, v in recs[0].items()
+                                if k.startswith('Permissions') and isinstance(v, bool)})
+        except Exception:
+            logger.debug("Batch system-perm query failed (batch %d)", i, exc_info=True)
+    return result
+
+
+def _get_permset_id_for_profile(sf, profile_id: str) -> str:
+    """Return the PermissionSet.Id that backs a Profile (IsOwnedByProfile=true).
+    SetupEntityAccess and PermissionSetTabSetting require the PermissionSet Id,
+    not the Profile Id."""
+    safe_id = escape_soql_string(profile_id)
+    q = (f"SELECT Id FROM PermissionSet "
+         f"WHERE ProfileId = '{safe_id}' AND IsOwnedByProfile = true LIMIT 1")
+    try:
+        recs = sf.query(q).get('records', [])
+        return recs[0]['Id'] if recs else profile_id
+    except Exception:
+        logger.debug("Could not resolve PermissionSet for profile %s", profile_id, exc_info=True)
+        return profile_id
+
+
+def _get_tab_settings(sf, parent_id: str) -> Dict[str, str]:
+    """Return {tab_name: visibility} for a Profile/PermissionSet.
+    parent_id must be the PermissionSet.Id (not Profile.Id) for profiles."""
+    safe_id = escape_soql_string(parent_id)
+    q = f"SELECT Name, Visibility FROM PermissionSetTabSetting WHERE ParentId = '{safe_id}'"
+    try:
+        records = _query_all(sf, q)
+        return {r['Name']: r['Visibility'] for r in records}
+    except Exception:
+        logger.debug("Tab settings query failed", exc_info=True)
+        return {}
+
+
+def _get_entity_access(sf, parent_id: str, entity_types: tuple = ('ApexClass', 'ApexPage', 'CustomPermission')) -> Dict[str, List[str]]:
+    """Return {entity_type: [entity_names]} for enabled access on a Profile/PermissionSet.
+    parent_id must be the PermissionSet.Id (not Profile.Id) for profiles."""
+    safe_id = escape_soql_string(parent_id)
+    types_in = ", ".join(f"'{t}'" for t in entity_types)
+    q = (f"SELECT SetupEntityId, SetupEntityType FROM SetupEntityAccess "
+         f"WHERE ParentId = '{safe_id}' AND SetupEntityType IN ({types_in})")
+    result: Dict[str, List[str]] = {t: [] for t in entity_types}
+    try:
+        for r in _query_all(sf, q):
+            t = r.get('SetupEntityType', '')
+            if t in result:
+                result[t].append(r['SetupEntityId'])
+    except Exception:
+        logger.debug("SetupEntityAccess query failed", exc_info=True)
+    return result
+
+
+def _resolve_entity_names(sf, ids: List[str], object_type: str) -> Dict[str, str]:
+    """Batch-resolve {Id: DeveloperName/Name} for a list of Salesforce Ids.
+    Batches in chunks of 200 to stay within SOQL query length limits."""
+    if not ids:
+        return {}
+    # ApexClass and ApexPage use 'Name' in regular SOQL (DeveloperName is Tooling API only)
+    # CustomPermission uses 'DeveloperName' via regular SOQL
+    name_field = 'DeveloperName' if object_type == 'CustomPermission' else 'Name'
+    from app.utils.validators import build_safe_soql_in_clause
+    result: Dict[str, str] = {}
+    for i in range(0, len(ids), 200):
+        batch = ids[i:i + 200]
+        in_clause = build_safe_soql_in_clause(batch)
+        q = f"SELECT Id, {name_field} FROM {object_type} WHERE Id IN {in_clause}"
+        try:
+            records = _query_all(sf, q)
+            result.update({r['Id']: r.get(name_field, r['Id']) for r in records})
+        except Exception:
+            logger.debug("Entity name resolution failed for %s (batch %d)", object_type, i, exc_info=True)
+            result.update({eid: eid for eid in batch})
+    return result
+
+
+def _diff_dicts(d1: Dict, d2: Dict, key1: str = 'profile1', key2: str = 'profile2') -> List[Dict]:
+    """Return list of {key, <key1>_value, <key2>_value} where values differ."""
+    all_keys = set(d1) | set(d2)
+    return [
+        {'key': k, f'{key1}_value': d1.get(k), f'{key2}_value': d2.get(k)}
+        for k in sorted(all_keys) if d1.get(k) != d2.get(k)
+    ]
+
+
+def _diff_sets(s1: set, s2: set, key1: str = 'profile1', key2: str = 'profile2') -> Dict:
+    return {
+        f'only_in_{key1}': sorted(s1 - s2),
+        f'only_in_{key2}': sorted(s2 - s1),
+        'in_both': sorted(s1 & s2),
+    }
 
 def _create_json_response(success, **kwargs):
     """Create guaranteed valid JSON response"""
@@ -26,262 +162,395 @@ def _create_json_response(success, **kwargs):
 
 
 @register_tool
-def compare_profiles(profile1_name: str, profile2_name: str, org2_user_id: str = None) -> str:
+def compare_profiles(
+    profile1_name: str,
+    profile2_name: str,
+    org2_user_id: str = None,
+    sections: str = "all"
+) -> str:
     """
-    Compare two Salesforce profiles and show their differences.
+    Compare two Salesforce profiles across all permission dimensions.
+
+    Compares object permissions, field permissions, tab visibility, app/Apex/VF
+    page access, and system (user) permissions. Fully paginated — works on large orgs
+    with thousands of field permissions.
 
     Args:
-        profile1_name: Name of first profile
-        profile2_name: Name of second profile
-        org2_user_id: Optional user ID for second org (if comparing across orgs)
+        profile1_name: Name of first profile (e.g. "System Administrator")
+        profile2_name: Name of second profile (e.g. "Standard User")
+        org2_user_id: Optional user ID for second org (cross-org comparison)
+        sections: Comma-separated list of sections to include.
+                  Options: objects, fields, tabs, apps, system, all
+                  Default: all
 
     Returns:
-        JSON response with detailed comparison
+        JSON response with per-section diff results
 
     Example:
-        # Compare within same org
-        compare_profiles(
-            profile1_name="System Administrator",
-            profile2_name="Standard User"
-        )
+        # Full comparison
+        compare_profiles("System Administrator", "Standard User")
 
-        # Compare across orgs
-        compare_profiles(
-            profile1_name="System Administrator",
-            profile2_name="System Administrator",
-            org2_user_id="00D4x000000XyzE"
-        )
+        # Objects + fields only (faster)
+        compare_profiles("System Administrator", "Standard User", sections="objects,fields")
 
-    Added by Sameer
+        # Cross-org
+        compare_profiles("Sales User", "Sales User", org2_user_id="005xx000001abc")
     """
     try:
-        # Get first org connection
-        sf1 = get_salesforce_connection()
+        want = {s.strip().lower() for s in sections.split(',')}
+        all_sections = want == {'all'}
 
-        # Get second org connection if specified
+        sf1 = get_salesforce_connection()
         sf2 = get_salesforce_connection(org2_user_id) if org2_user_id else sf1
 
-        # Query profile 1
-        profile1_query = f"""
-        SELECT Id, Name, Description, UserLicenseId, UserLicense.Name
-        FROM Profile
-        WHERE Name = '{profile1_name}'
-        LIMIT 1
-        """
-        profile1_result = sf1.query(profile1_query)
+        # ── Fetch profile records ──────────────────────────────────────────
+        def _fetch_profile(sf, name):
+            q = (f"SELECT Id, Name, Description, UserLicense.Name "
+                 f"FROM Profile WHERE Name = '{escape_soql_string(name)}' LIMIT 1")
+            recs = sf.query(q).get('records', [])
+            return recs[0] if recs else None
 
-        if not profile1_result.get('records'):
-            return _create_json_response(False, error=f"Profile '{profile1_name}' not found in first org")
+        p1 = _fetch_profile(sf1, profile1_name)
+        if not p1:
+            return _create_json_response(False, error=f"Profile '{profile1_name}' not found")
+        p2 = _fetch_profile(sf2, profile2_name)
+        if not p2:
+            return _create_json_response(False, error=f"Profile '{profile2_name}' not found")
 
-        profile1 = profile1_result['records'][0]
+        p1_id, p2_id = p1['Id'], p2['Id']
+        # SetupEntityAccess and PermissionSetTabSetting require PermissionSet.Id,
+        # not Profile.Id — resolve the backing PermissionSet for each profile.
+        p1_ps_id = _get_permset_id_for_profile(sf1, p1_id)
+        p2_ps_id = _get_permset_id_for_profile(sf2, p2_id)
 
-        # Query profile 2
-        profile2_query = f"""
-        SELECT Id, Name, Description, UserLicenseId, UserLicense.Name
-        FROM Profile
-        WHERE Name = '{profile2_name}'
-        LIMIT 1
-        """
-        profile2_result = sf2.query(profile2_query)
+        OBJ_PERM_FIELDS = ['PermissionsRead', 'PermissionsCreate', 'PermissionsEdit',
+                           'PermissionsDelete', 'PermissionsViewAllRecords', 'PermissionsModifyAllRecords']
 
-        if not profile2_result.get('records'):
-            return _create_json_response(False, error=f"Profile '{profile2_name}' not found in second org")
+        response = {
+            'profile1': {'name': p1['Name'],
+                         'license': p1.get('UserLicense', {}).get('Name', ''),
+                         'description': p1.get('Description', '')},
+            'profile2': {'name': p2['Name'],
+                         'license': p2.get('UserLicense', {}).get('Name', ''),
+                         'description': p2.get('Description', '')},
+            'cross_org_comparison': org2_user_id is not None,
+            'sections_compared': sections,
+        }
 
-        profile2 = profile2_result['records'][0]
-
-        # Get object permissions for profile 1
-        obj_perms1_query = f"""
-        SELECT SobjectType, PermissionsRead, PermissionsCreate, PermissionsEdit, PermissionsDelete, PermissionsViewAllRecords, PermissionsModifyAllRecords
-        FROM ObjectPermissions
-        WHERE ParentId = '{profile1['Id']}'
-        """
-        obj_perms1 = sf1.query(obj_perms1_query)['records']
-
-        # Get object permissions for profile 2
-        obj_perms2_query = f"""
-        SELECT SobjectType, PermissionsRead, PermissionsCreate, PermissionsEdit, PermissionsDelete, PermissionsViewAllRecords, PermissionsModifyAllRecords
-        FROM ObjectPermissions
-        WHERE ParentId = '{profile2['Id']}'
-        """
-        obj_perms2 = sf2.query(obj_perms2_query)['records']
-
-        # Create permission maps
-        perms1_map = {p['SobjectType']: p for p in obj_perms1}
-        perms2_map = {p['SobjectType']: p for p in obj_perms2}
-
-        all_objects = set(perms1_map.keys()) | set(perms2_map.keys())
-
-        # Compare permissions
-        differences = []
-        similarities = []
-        only_in_profile1 = []
-        only_in_profile2 = []
-
-        for obj in sorted(all_objects):
-            p1 = perms1_map.get(obj)
-            p2 = perms2_map.get(obj)
-
-            if p1 and not p2:
-                only_in_profile1.append(obj)
-            elif p2 and not p1:
-                only_in_profile2.append(obj)
-            elif p1 and p2:
-                # Compare permissions
-                perm_diff = {}
-                for perm_field in ['PermissionsRead', 'PermissionsCreate', 'PermissionsEdit', 'PermissionsDelete', 'PermissionsViewAllRecords', 'PermissionsModifyAllRecords']:
-                    if p1.get(perm_field) != p2.get(perm_field):
-                        perm_diff[perm_field] = {
-                            'profile1': p1.get(perm_field),
-                            'profile2': p2.get(perm_field)
-                        }
-
-                if perm_diff:
-                    differences.append({
-                        'object': obj,
-                        'differences': perm_diff
-                    })
+        # ── Object Permissions ────────────────────────────────────────────
+        if all_sections or 'objects' in want:
+            q_obj = ("SELECT SobjectType, PermissionsRead, PermissionsCreate, PermissionsEdit, "
+                     "PermissionsDelete, PermissionsViewAllRecords, PermissionsModifyAllRecords "
+                     "FROM ObjectPermissions WHERE ParentId = '{}'")
+            op1 = {r['SobjectType']: r for r in _query_all(sf1, q_obj.format(escape_soql_string(p1_id)))}
+            op2 = {r['SobjectType']: r for r in _query_all(sf2, q_obj.format(escape_soql_string(p2_id)))}
+            all_objs = set(op1) | set(op2)
+            obj_diffs, obj_same = [], []
+            only_p1_objs, only_p2_objs = [], []
+            for obj in sorted(all_objs):
+                r1, r2 = op1.get(obj), op2.get(obj)
+                if r1 and not r2:
+                    only_p1_objs.append(obj)
+                elif r2 and not r1:
+                    only_p2_objs.append(obj)
                 else:
-                    similarities.append(obj)
+                    diff = {f: {'profile1': r1.get(f), 'profile2': r2.get(f)}
+                            for f in OBJ_PERM_FIELDS if r1.get(f) != r2.get(f)}
+                    if diff:
+                        obj_diffs.append({'object': obj, 'differences': diff})
+                    else:
+                        obj_same.append(obj)
+            response['object_permissions'] = {
+                'summary': {
+                    'total': len(all_objs),
+                    'with_differences': len(obj_diffs),
+                    'identical': len(obj_same),
+                    'only_in_profile1': len(only_p1_objs),
+                    'only_in_profile2': len(only_p2_objs),
+                },
+                'differences': obj_diffs,
+                'only_in_profile1': only_p1_objs,
+                'only_in_profile2': only_p2_objs,
+            }
 
-        return _create_json_response(
-            True,
-            profile1={
-                'name': profile1['Name'],
-                'license': profile1['UserLicense']['Name'],
-                'description': profile1.get('Description', '')
-            },
-            profile2={
-                'name': profile2['Name'],
-                'license': profile2['UserLicense']['Name'],
-                'description': profile2.get('Description', '')
-            },
-            comparison_summary={
-                'total_objects_compared': len(all_objects),
-                'objects_with_differences': len(differences),
-                'objects_with_same_permissions': len(similarities),
-                'only_in_profile1': len(only_in_profile1),
-                'only_in_profile2': len(only_in_profile2)
-            },
-            objects_with_permission_differences=differences[:20],  # Limit to first 20
-            objects_only_in_profile1=only_in_profile1[:10],
-            objects_only_in_profile2=only_in_profile2[:10],
-            objects_with_identical_permissions_count=len(similarities),
-            cross_org_comparison=org2_user_id is not None
-        )
+        # ── Field Permissions ─────────────────────────────────────────────
+        if all_sections or 'fields' in want:
+            q_fp = ("SELECT Field, PermissionsRead, PermissionsEdit "
+                    "FROM FieldPermissions WHERE ParentId = '{}'")
+            fp1 = {r['Field']: r for r in _query_all(sf1, q_fp.format(escape_soql_string(p1_id)))}
+            fp2 = {r['Field']: r for r in _query_all(sf2, q_fp.format(escape_soql_string(p2_id)))}
+            all_fields = set(fp1) | set(fp2)
+            field_diffs = []
+            for field in sorted(all_fields):
+                f1, f2 = fp1.get(field), fp2.get(field)
+                p1_read  = f1.get('PermissionsRead',  False) if f1 else False
+                p1_edit  = f1.get('PermissionsEdit',  False) if f1 else False
+                p2_read  = f2.get('PermissionsRead',  False) if f2 else False
+                p2_edit  = f2.get('PermissionsEdit',  False) if f2 else False
+                if p1_read != p2_read or p1_edit != p2_edit:
+                    field_diffs.append({
+                        'field': field,
+                        'profile1_read': p1_read, 'profile1_edit': p1_edit,
+                        'profile2_read': p2_read, 'profile2_edit': p2_edit,
+                    })
+            response['field_permissions'] = {
+                'summary': {
+                    'total_fields': len(all_fields),
+                    'fields_with_differences': len(field_diffs),
+                },
+                'differences': field_diffs,
+            }
+
+        # ── Tab Visibility ────────────────────────────────────────────────
+        if all_sections or 'tabs' in want:
+            tabs1 = _get_tab_settings(sf1, p1_ps_id)
+            tabs2 = _get_tab_settings(sf2, p2_ps_id)
+            all_tabs = set(tabs1) | set(tabs2)
+            tab_diffs = [
+                {'tab': t, 'profile1': tabs1.get(t, 'Hidden'), 'profile2': tabs2.get(t, 'Hidden')}
+                for t in sorted(all_tabs) if tabs1.get(t, 'Hidden') != tabs2.get(t, 'Hidden')
+            ]
+            response['tab_visibility'] = {
+                'summary': {
+                    'total_tabs': len(all_tabs),
+                    'tabs_with_differences': len(tab_diffs),
+                },
+                'differences': tab_diffs,
+                'only_in_profile1': sorted(set(tabs1) - set(tabs2)),
+                'only_in_profile2': sorted(set(tabs2) - set(tabs1)),
+            }
+
+        # ── App / Apex Class / VF Page / Custom Permission Access ─────────
+        if all_sections or 'apps' in want:
+            entity_types = ('ApexClass', 'ApexPage', 'CustomPermission')
+            ea1 = _get_entity_access(sf1, p1_ps_id, entity_types)
+            ea2 = _get_entity_access(sf2, p2_ps_id, entity_types)
+            app_section = {}
+            for etype in entity_types:
+                ids1 = set(ea1.get(etype, []))
+                ids2 = set(ea2.get(etype, []))
+                # Resolve names per-org to avoid cross-org ID mismatches
+                names1 = _resolve_entity_names(sf1, list(ids1), etype)
+                names2 = _resolve_entity_names(sf2, list(ids2), etype)
+                names1_set = set(names1.values())
+                names2_set = set(names2.values())
+                app_section[etype] = {
+                    'only_in_profile1': sorted(names1_set - names2_set),
+                    'only_in_profile2': sorted(names2_set - names1_set),
+                    'in_both': sorted(names1_set & names2_set),
+                    'in_both_count': len(names1_set & names2_set),
+                    'only_in_profile1_count': len(names1_set - names2_set),
+                    'only_in_profile2_count': len(names2_set - names1_set),
+                }
+            response['entity_access'] = app_section
+
+        # ── System / User Permissions ─────────────────────────────────────
+        if all_sections or 'system' in want:
+            sys1 = _get_system_permissions(sf1, p1_id)
+            sys2 = _get_system_permissions(sf2, p2_id)
+            sys_diffs = _diff_dicts(sys1, sys2, 'profile1', 'profile2')
+            response['system_permissions'] = {
+                'summary': {
+                    'total_permissions': len(set(sys1) | set(sys2)),
+                    'permissions_with_differences': len(sys_diffs),
+                    'profile1_enabled_count': sum(1 for v in sys1.values() if v),
+                    'profile2_enabled_count': sum(1 for v in sys2.values() if v),
+                },
+                'differences': sys_diffs,
+            }
+
+        return _create_json_response(True, **response)
 
     except Exception as e:
         return _create_json_response(False, error=f"Failed to compare profiles: {str(e)}")
 
 
 @register_tool
-def compare_permission_sets(permset1_name: str, permset2_name: str, org2_user_id: str = None) -> str:
+def compare_permission_sets(
+    permset1_name: str,
+    permset2_name: str,
+    org2_user_id: str = None,
+    sections: str = "all"
+) -> str:
     """
-    Compare two permission sets and show their differences.
+    Compare two permission sets across all permission dimensions.
+
+    Compares object permissions, field permissions, tab visibility, Apex class /
+    VF page / custom permission access, and system user permissions.
+    Fully paginated — no record count caps.
 
     Args:
         permset1_name: Name or Label of first permission set
         permset2_name: Name or Label of second permission set
-        org2_user_id: Optional user ID for second org (if comparing across orgs)
+        org2_user_id: Optional user ID for second org (cross-org comparison)
+        sections: Comma-separated sections to include.
+                  Options: objects, fields, tabs, apps, system, all
+                  Default: all
 
     Returns:
-        JSON response with detailed comparison
+        JSON response with per-section diff results
 
     Example:
-        compare_permission_sets(
-            permset1_name="API_User",
-            permset2_name="Advanced_User"
-        )
+        # Full comparison
+        compare_permission_sets("API_User", "Advanced_User")
 
-    Added by Sameer
+        # Fields + system permissions only
+        compare_permission_sets("API_User", "Advanced_User", sections="fields,system")
+
+        # Cross-org
+        compare_permission_sets("Sales_PS", "Sales_PS", org2_user_id="005xx000001abc")
     """
     try:
+        want = {s.strip().lower() for s in sections.split(',')}
+        all_sections = want == {'all'}
+
         sf1 = get_salesforce_connection()
         sf2 = get_salesforce_connection(org2_user_id) if org2_user_id else sf1
 
-        # Find permission set 1
-        ps1_query = f"""
-        SELECT Id, Name, Label, Description
-        FROM PermissionSet
-        WHERE Name = '{permset1_name}' OR Label = '{permset1_name}'
-        LIMIT 1
-        """
-        ps1_result = sf1.query(ps1_query)
-        if not ps1_result.get('records'):
+        # ── Fetch permission sets ─────────────────────────────────────────
+        def _fetch_ps(sf, name):
+            n = escape_soql_string(name)
+            q = (f"SELECT Id, Name, Label, Description FROM PermissionSet "
+                 f"WHERE (Name = '{n}' OR Label = '{n}') AND IsOwnedByProfile = false LIMIT 1")
+            recs = sf.query(q).get('records', [])
+            return recs[0] if recs else None
+
+        ps1 = _fetch_ps(sf1, permset1_name)
+        if not ps1:
             return _create_json_response(False, error=f"Permission set '{permset1_name}' not found in first org")
-        ps1 = ps1_result['records'][0]
-
-        # Find permission set 2
-        ps2_query = f"""
-        SELECT Id, Name, Label, Description
-        FROM PermissionSet
-        WHERE Name = '{permset2_name}' OR Label = '{permset2_name}'
-        LIMIT 1
-        """
-        ps2_result = sf2.query(ps2_query)
-        if not ps2_result.get('records'):
+        ps2 = _fetch_ps(sf2, permset2_name)
+        if not ps2:
             return _create_json_response(False, error=f"Permission set '{permset2_name}' not found in second org")
-        ps2 = ps2_result['records'][0]
 
-        # Get object permissions
-        obj_perms1 = sf1.query(f"SELECT SobjectType, PermissionsRead, PermissionsCreate, PermissionsEdit, PermissionsDelete FROM ObjectPermissions WHERE ParentId = '{ps1['Id']}'")['records']
-        obj_perms2 = sf2.query(f"SELECT SobjectType, PermissionsRead, PermissionsCreate, PermissionsEdit, PermissionsDelete FROM ObjectPermissions WHERE ParentId = '{ps2['Id']}'")['records']
+        ps1_id, ps2_id = ps1['Id'], ps2['Id']
+        OBJ_PERM_FIELDS = ['PermissionsRead', 'PermissionsCreate', 'PermissionsEdit',
+                           'PermissionsDelete', 'PermissionsViewAllRecords', 'PermissionsModifyAllRecords']
 
-        # Get field permissions
-        field_perms1 = sf1.query(f"SELECT Field, PermissionsRead, PermissionsEdit FROM FieldPermissions WHERE ParentId = '{ps1['Id']}' LIMIT 200")['records']
-        field_perms2 = sf2.query(f"SELECT Field, PermissionsRead, PermissionsEdit FROM FieldPermissions WHERE ParentId = '{ps2['Id']}' LIMIT 200")['records']
+        response = {
+            'permset1': {'name': ps1['Name'], 'label': ps1['Label'], 'description': ps1.get('Description', '')},
+            'permset2': {'name': ps2['Name'], 'label': ps2['Label'], 'description': ps2.get('Description', '')},
+            'cross_org_comparison': org2_user_id is not None,
+            'sections_compared': sections,
+        }
 
-        # Get user permissions
-        user_perms1_query = f"SELECT Id FROM PermissionSet WHERE Id = '{ps1['Id']}'"
-        # Note: User permissions are stored as boolean fields on PermissionSet object
+        # ── Object Permissions ────────────────────────────────────────────
+        if all_sections or 'objects' in want:
+            q_obj = ("SELECT SobjectType, PermissionsRead, PermissionsCreate, PermissionsEdit, "
+                     "PermissionsDelete, PermissionsViewAllRecords, PermissionsModifyAllRecords "
+                     "FROM ObjectPermissions WHERE ParentId = '{}'")
+            op1 = {r['SobjectType']: r for r in _query_all(sf1, q_obj.format(escape_soql_string(ps1_id)))}
+            op2 = {r['SobjectType']: r for r in _query_all(sf2, q_obj.format(escape_soql_string(ps2_id)))}
+            all_objs = set(op1) | set(op2)
+            obj_diffs, only_ps1_objs, only_ps2_objs, same_count = [], [], [], 0
+            for obj in sorted(all_objs):
+                r1, r2 = op1.get(obj), op2.get(obj)
+                if r1 and not r2:
+                    only_ps1_objs.append(obj)
+                elif r2 and not r1:
+                    only_ps2_objs.append(obj)
+                else:
+                    diff = {f: {'permset1': r1.get(f), 'permset2': r2.get(f)}
+                            for f in OBJ_PERM_FIELDS if r1.get(f) != r2.get(f)}
+                    if diff:
+                        obj_diffs.append({'object': obj, 'differences': diff})
+                    else:
+                        same_count += 1
+            response['object_permissions'] = {
+                'summary': {
+                    'total': len(all_objs),
+                    'with_differences': len(obj_diffs),
+                    'identical': same_count,
+                    'only_in_permset1': len(only_ps1_objs),
+                    'only_in_permset2': len(only_ps2_objs),
+                },
+                'differences': obj_diffs,
+                'only_in_permset1': only_ps1_objs,
+                'only_in_permset2': only_ps2_objs,
+            }
 
-        # Compare object permissions
-        perms1_map = {p['SobjectType']: p for p in obj_perms1}
-        perms2_map = {p['SobjectType']: p for p in obj_perms2}
-        all_objects = set(perms1_map.keys()) | set(perms2_map.keys())
+        # ── Field Permissions  (fully paginated — no LIMIT 200) ───────────
+        if all_sections or 'fields' in want:
+            q_fp = "SELECT Field, PermissionsRead, PermissionsEdit FROM FieldPermissions WHERE ParentId = '{}'"
+            fp1 = {r['Field']: r for r in _query_all(sf1, q_fp.format(escape_soql_string(ps1_id)))}
+            fp2 = {r['Field']: r for r in _query_all(sf2, q_fp.format(escape_soql_string(ps2_id)))}
+            all_fields = set(fp1) | set(fp2)
+            field_diffs = []
+            for field in sorted(all_fields):
+                f1, f2 = fp1.get(field), fp2.get(field)
+                p1_read = f1.get('PermissionsRead',  False) if f1 else False
+                p1_edit = f1.get('PermissionsEdit',  False) if f1 else False
+                p2_read = f2.get('PermissionsRead',  False) if f2 else False
+                p2_edit = f2.get('PermissionsEdit',  False) if f2 else False
+                if p1_read != p2_read or p1_edit != p2_edit:
+                    field_diffs.append({
+                        'field': field,
+                        'permset1_read': p1_read, 'permset1_edit': p1_edit,
+                        'permset2_read': p2_read, 'permset2_edit': p2_edit,
+                    })
+            response['field_permissions'] = {
+                'summary': {
+                    'total_fields': len(all_fields),
+                    'fields_with_differences': len(field_diffs),
+                },
+                'differences': field_diffs,
+            }
 
-        object_differences = []
-        for obj in sorted(all_objects):
-            p1 = perms1_map.get(obj)
-            p2 = perms2_map.get(obj)
-            if not p1 or not p2:
-                object_differences.append({
-                    'object': obj,
-                    'in_permset1': p1 is not None,
-                    'in_permset2': p2 is not None
-                })
+        # ── Tab Visibility ────────────────────────────────────────────────
+        if all_sections or 'tabs' in want:
+            tabs1 = _get_tab_settings(sf1, ps1_id)
+            tabs2 = _get_tab_settings(sf2, ps2_id)
+            all_tabs = set(tabs1) | set(tabs2)
+            tab_diffs = [
+                {'tab': t, 'permset1': tabs1.get(t, 'Hidden'), 'permset2': tabs2.get(t, 'Hidden')}
+                for t in sorted(all_tabs) if tabs1.get(t, 'Hidden') != tabs2.get(t, 'Hidden')
+            ]
+            response['tab_visibility'] = {
+                'summary': {'total_tabs': len(all_tabs), 'tabs_with_differences': len(tab_diffs)},
+                'differences': tab_diffs,
+                'only_in_permset1': sorted(set(tabs1) - set(tabs2)),
+                'only_in_permset2': sorted(set(tabs2) - set(tabs1)),
+            }
 
-        # Compare field permissions
-        fields1_map = {f['Field']: f for f in field_perms1}
-        fields2_map = {f['Field']: f for f in field_perms2}
-        all_fields = set(fields1_map.keys()) | set(fields2_map.keys())
+        # ── App / Apex Class / VF Page / Custom Permission Access ─────────
+        if all_sections or 'apps' in want:
+            entity_types = ('ApexClass', 'ApexPage', 'CustomPermission')
+            ea1 = _get_entity_access(sf1, ps1_id, entity_types)
+            ea2 = _get_entity_access(sf2, ps2_id, entity_types)
+            app_section = {}
+            for etype in entity_types:
+                ids1 = set(ea1.get(etype, []))
+                ids2 = set(ea2.get(etype, []))
+                # Resolve names per-org to avoid cross-org ID mismatches
+                names1 = _resolve_entity_names(sf1, list(ids1), etype)
+                names2 = _resolve_entity_names(sf2, list(ids2), etype)
+                names1_set = set(names1.values())
+                names2_set = set(names2.values())
+                app_section[etype] = {
+                    'only_in_permset1': sorted(names1_set - names2_set),
+                    'only_in_permset2': sorted(names2_set - names1_set),
+                    'in_both': sorted(names1_set & names2_set),
+                    'in_both_count': len(names1_set & names2_set),
+                    'only_in_permset1_count': len(names1_set - names2_set),
+                    'only_in_permset2_count': len(names2_set - names1_set),
+                }
+            response['entity_access'] = app_section
 
-        field_differences = []
-        for field in sorted(all_fields):
-            f1 = fields1_map.get(field)
-            f2 = fields2_map.get(field)
-            if not f1 or not f2 or f1.get('PermissionsRead') != f2.get('PermissionsRead') or f1.get('PermissionsEdit') != f2.get('PermissionsEdit'):
-                field_differences.append({
-                    'field': field,
-                    'permset1_read': f1.get('PermissionsRead') if f1 else None,
-                    'permset1_edit': f1.get('PermissionsEdit') if f1 else None,
-                    'permset2_read': f2.get('PermissionsRead') if f2 else None,
-                    'permset2_edit': f2.get('PermissionsEdit') if f2 else None
-                })
+        # ── System / User Permissions ─────────────────────────────────────
+        if all_sections or 'system' in want:
+            sys1 = _get_system_permissions(sf1, ps1_id)
+            sys2 = _get_system_permissions(sf2, ps2_id)
+            sys_diffs = _diff_dicts(sys1, sys2, 'permset1', 'permset2')
+            response['system_permissions'] = {
+                'summary': {
+                    'total_permissions': len(set(sys1) | set(sys2)),
+                    'permissions_with_differences': len(sys_diffs),
+                    'permset1_enabled_count': sum(1 for v in sys1.values() if v),
+                    'permset2_enabled_count': sum(1 for v in sys2.values() if v),
+                },
+                'differences': sys_diffs,
+            }
 
-        return _create_json_response(
-            True,
-            permset1={'name': ps1['Name'], 'label': ps1['Label'], 'description': ps1.get('Description', '')},
-            permset2={'name': ps2['Name'], 'label': ps2['Label'], 'description': ps2.get('Description', '')},
-            comparison_summary={
-                'object_permissions_compared': len(all_objects),
-                'object_differences': len(object_differences),
-                'field_permissions_compared': len(all_fields),
-                'field_differences': len(field_differences)
-            },
-            object_permission_differences=object_differences[:20],
-            field_permission_differences=field_differences[:30],
-            cross_org_comparison=org2_user_id is not None
-        )
+        return _create_json_response(True, **response)
 
     except Exception as e:
         return _create_json_response(False, error=f"Failed to compare permission sets: {str(e)}")

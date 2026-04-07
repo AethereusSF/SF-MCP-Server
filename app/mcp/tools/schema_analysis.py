@@ -11,6 +11,7 @@ from datetime import datetime
 
 from app.mcp.server import register_tool
 from app.services.salesforce import get_salesforce_connection
+from app.utils.validators import escape_soql_string, escape_soql_like
 
 logger = logging.getLogger(__name__)
 
@@ -64,26 +65,26 @@ def analyze_object_dependencies(object_name: str) -> str:
         vr_query = f"""
             SELECT Id, ValidationName, Active, ErrorDisplayField, ErrorMessage
             FROM ValidationRule
-            WHERE EntityDefinition.QualifiedApiName = '{object_name}'
+            WHERE EntityDefinition.QualifiedApiName = '{escape_soql_string(object_name)}'
         """
         try:
             vr_result = sf.toolingexecute(f"query/?q={vr_query}")
             dependencies["validation_rules"] = vr_result.get("records", [])
-        except:
-            pass
+        except Exception:
+            logger.debug("Could not fetch validation rules", exc_info=True)
 
         # Get triggers
         trigger_query = f"""
             SELECT Id, Name, Status, UsageAfterInsert, UsageAfterUpdate,
                    UsageAfterDelete, UsageBeforeInsert, UsageBeforeUpdate, UsageBeforeDelete
             FROM ApexTrigger
-            WHERE TableEnumOrId = '{object_name}'
+            WHERE TableEnumOrId = '{escape_soql_string(object_name)}'
         """
         try:
             trigger_result = sf.toolingexecute(f"query/?q={trigger_query}")
             dependencies["triggers"] = trigger_result.get("records", [])
-        except:
-            pass
+        except Exception:
+            logger.debug("Could not fetch triggers", exc_info=True)
 
         return json.dumps({
             "success": True,
@@ -132,28 +133,30 @@ def find_unused_fields(object_name: str, days: int = 90) -> str:
             apex_query = f"""
                 SELECT Id, Name
                 FROM ApexClass
-                WHERE Body LIKE '%{field_name}%'
+                WHERE Body LIKE '%{escape_soql_like(field_name)}%'
                 LIMIT 1
             """
 
             try:
                 apex_result = sf.toolingexecute(f"query/?q={apex_query}")
                 has_apex_reference = len(apex_result.get("records", [])) > 0
-            except:
+            except Exception:
+                logger.debug("Could not search ApexClass body", exc_info=True)
                 has_apex_reference = False
 
             # Try to find in triggers
             trigger_query = f"""
                 SELECT Id, Name
                 FROM ApexTrigger
-                WHERE Body LIKE '%{field_name}%'
+                WHERE Body LIKE '%{escape_soql_like(field_name)}%'
                 LIMIT 1
             """
 
             try:
                 trigger_result = sf.toolingexecute(f"query/?q={trigger_query}")
                 has_trigger_reference = len(trigger_result.get("records", [])) > 0
-            except:
+            except Exception:
+                logger.debug("Could not search ApexTrigger body", exc_info=True)
                 has_trigger_reference = False
 
             if not has_apex_reference and not has_trigger_reference:

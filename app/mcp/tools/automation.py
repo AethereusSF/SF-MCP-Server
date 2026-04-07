@@ -8,6 +8,7 @@ from typing import Optional
 
 from app.mcp.server import register_tool
 from app.services.salesforce import get_salesforce_connection
+from app.utils.validators import escape_soql_string
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ def list_batch_jobs(status: str = "all", max_results: int = 100) -> str:
         """
 
         if status.lower() != "all":
-            query += f" WHERE Status = '{status.title()}'"
+            query += f" WHERE Status = '{escape_soql_string(status.title())}'"
 
         query += f" ORDER BY CreatedDate DESC LIMIT {max_results}"
 
@@ -76,7 +77,7 @@ def get_batch_job_details(job_id: str) -> str:
                    NumberOfErrors, CreatedDate, CompletedDate, MethodName,
                    ExtendedStatus, CreatedBy.Name, ApexClass.Name
             FROM AsyncApexJob
-            WHERE Id = '{job_id}'
+            WHERE Id = '{escape_soql_string(job_id)}'
         """
 
         job_result = sf.query(job_query)
@@ -90,7 +91,7 @@ def get_batch_job_details(job_id: str) -> str:
             SELECT Id, Status, NumberOfErrors, TotalJobItems, JobItemsProcessed,
                    ExtendedStatus, CreatedDate, CompletedDate
             FROM AsyncApexJob
-            WHERE ParentJobId = '{job_id}'
+            WHERE ParentJobId = '{escape_soql_string(job_id)}'
         """
 
         items_result = sf.query(items_query)
@@ -293,7 +294,7 @@ def get_debug_logs(
         """
 
         if user_name:
-            query += f" WHERE LogUser.Name = '{user_name}'"
+            query += f" WHERE LogUser.Name = '{escape_soql_string(user_name)}'"
 
         query += f" ORDER BY StartTime DESC LIMIT {actual_limit}"
 
